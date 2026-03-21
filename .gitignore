@@ -1,0 +1,40 @@
+# Binaries
+mockr
+mokr
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+*.test
+*.out
+/dist/
+
+# Dependency directories
+vendor/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Record mode output — stubs and routes captured at runtime should not be committed
+# unless you explicitly want to check them in.
+examples/record-mode/recorded.toml
+examples/record-mode/stubs/
+
+# Any local mockr config and stubs at the project root (from --init runs)
+/mockr.toml
+/mockr.yaml
+/mockr.yml
+/mockr.json
+/stubs/

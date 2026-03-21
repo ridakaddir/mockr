@@ -1,0 +1,6 @@
+{
+  "username": "bob",
+  "orders": [
+    { "id": "ord-003", "product": "Mechanical Keyboard", "amount": 129.99, "status": "processing" }
+  ]
+}

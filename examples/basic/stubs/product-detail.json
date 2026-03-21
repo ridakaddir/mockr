@@ -1,0 +1,8 @@
+{
+  "id": "1",
+  "name": "Wireless Headphones",
+  "price": 79.99,
+  "stock": 42,
+  "description": "Over-ear noise-cancelling wireless headphones with 30h battery life.",
+  "tags": ["audio", "wireless", "noise-cancelling"]
+}

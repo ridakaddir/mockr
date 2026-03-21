@@ -1,0 +1,78 @@
+# Checkout endpoint — conditions on body field, query param, and header
+#
+# Run:
+#   mockr --config examples/conditions
+#
+# Try:
+#   # VIP user (body condition → discounted total)
+#   http POST :4000/api/cart/checkout user_type=vip
+#
+#   # Banned user (body condition → 403)
+#   http POST :4000/api/cart/checkout user_type=banned
+#
+#   # v2 API caller (query param condition)
+#   http POST ':4000/api/cart/checkout?version=v2'
+#
+#   # Admin (header condition → full details)
+#   http POST :4000/api/cart/checkout X-User-Role:admin
+#
+#   # Standard user (no condition matches → fallback)
+#   http POST :4000/api/cart/checkout user_type=standard
+
+[[routes]]
+method   = "POST"
+match    = "/api/cart/checkout"
+enabled  = true
+fallback = "standard"
+
+  # Banned users — checked first, highest priority
+  [[routes.conditions]]
+  source = "body"
+  field  = "user_type"
+  op     = "eq"
+  value  = "banned"
+  case   = "forbidden"
+
+  # VIP users — discounted total
+  [[routes.conditions]]
+  source = "body"
+  field  = "user_type"
+  op     = "eq"
+  value  = "vip"
+  case   = "vip"
+
+  # v2 API callers — different response shape
+  [[routes.conditions]]
+  source = "query"
+  field  = "version"
+  op     = "eq"
+  value  = "v2"
+  case   = "v2"
+
+  # Admin header — full cart details
+  [[routes.conditions]]
+  source = "header"
+  field  = "X-User-Role"
+  op     = "eq"
+  value  = "admin"
+  case   = "admin"
+
+  [routes.cases.vip]
+  status = 200
+  file   = "stubs/cart-vip.json"
+
+  [routes.cases.standard]
+  status = 200
+  file   = "stubs/cart-standard.json"
+
+  [routes.cases.forbidden]
+  status = 403
+  json   = '{"error": "Account suspended. Contact support."}'
+
+  [routes.cases.v2]
+  status = 200
+  json   = '{"version": "v2", "checkout_url": "https://pay.example.com/v2/cart-001"}'
+
+  [routes.cases.admin]
+  status = 200
+  json   = '{"admin": true, "raw_cart": {"items": 5, "flags": ["flagged_item"]}, "total": 999.99}'

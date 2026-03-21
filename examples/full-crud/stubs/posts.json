@@ -1,0 +1,26 @@
+{
+  "posts": [
+    {
+      "author": "bob",
+      "body": "Use conditions to return different responses based on request data.",
+      "created_at": "2026-02-15T14:30:00Z",
+      "id": "2",
+      "published": false,
+      "title": "Condition-based routing"
+    },
+    {
+      "author": "charlie",
+      "body": "Hello",
+      "id": "3",
+      "published": false,
+      "title": "New post"
+    },
+    {
+      "author": "charlie",
+      "body": "Hi",
+      "id": "3",
+      "published": false,
+      "title": "New"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "cart_id": "cart-001",
+  "user_type": "vip",
+  "items": [
+    { "product_id": "1", "name": "Wireless Headphones", "qty": 1, "price": 79.99 }
+  ],
+  "subtotal": 79.99,
+  "discount": 23.99,
+  "discount_pct": 30,
+  "total": 56.00
+}

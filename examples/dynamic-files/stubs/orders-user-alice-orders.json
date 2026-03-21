@@ -1,0 +1,7 @@
+{
+  "username": "alice",
+  "orders": [
+    { "id": "ord-001", "product": "Wireless Headphones", "amount": 79.99, "status": "delivered" },
+    { "id": "ord-002", "product": "USB-C Hub",           "amount": 34.99, "status": "shipped"   }
+  ]
+}

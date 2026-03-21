@@ -1,0 +1,62 @@
+# Orders endpoint — conditions on nested body fields (dot-notation)
+#
+# Run:
+#   mockr --config examples/conditions
+#
+# Try:
+#   # Pay with crypto → 202 pending
+#   http POST :4000/api/orders payment:='{"method":"crypto"}' items:='[{"id":"1"}]'
+#
+#   # Pay with card → 201 confirmed
+#   http POST :4000/api/orders payment:='{"method":"card"}' items:='[{"id":"1"}]'
+#
+#   # Missing items field → 422 validation error
+#   http POST :4000/api/orders payment:='{"method":"card"}'
+#
+#   # No payment method → fallback 201
+#   http POST :4000/api/orders items:='[{"id":"1"}]'
+
+[[routes]]
+method   = "POST"
+match    = "/api/orders"
+enabled  = true
+fallback = "created"
+
+  # Missing items — checked first so it catches any payment method
+  [[routes.conditions]]
+  source = "body"
+  field  = "items"
+  op     = "not_exists"
+  case   = "missing_items"
+
+  # Crypto payment — awaiting confirmation
+  [[routes.conditions]]
+  source = "body"
+  field  = "payment.method"
+  op     = "eq"
+  value  = "crypto"
+  case   = "crypto_pending"
+
+  # Card payment — instant confirmation
+  [[routes.conditions]]
+  source = "body"
+  field  = "payment.method"
+  op     = "eq"
+  value  = "card"
+  case   = "card_created"
+
+  [routes.cases.crypto_pending]
+  status = 202
+  json   = '{"id": "{{uuid}}", "status": "pending", "message": "Awaiting crypto confirmation"}'
+
+  [routes.cases.card_created]
+  status = 201
+  json   = '{"id": "{{uuid}}", "status": "confirmed", "created_at": "{{now}}"}'
+
+  [routes.cases.missing_items]
+  status = 422
+  json   = '{"error": "Validation failed", "field": "items", "message": "items is required"}'
+
+  [routes.cases.created]
+  status = 201
+  json   = '{"id": "{{uuid}}", "status": "created", "created_at": "{{now}}"}'

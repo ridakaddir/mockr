@@ -1,0 +1,7 @@
+{
+  "id": "2",
+  "username": "bob",
+  "email": "bob@example.com",
+  "plan": "free",
+  "created_at": "2024-03-01T12:00:00Z"
+}

@@ -1,0 +1,34 @@
+# Record mode example — proxy a real API and auto-save responses as stubs
+#
+# --api-prefix /api  tells mockr to:
+#   - accept requests at http://localhost:4000/api/*
+#   - strip /api before forwarding to the upstream
+#
+# So your frontend calls /api/posts and the upstream receives /posts.
+#
+# Run:
+#   mockr --config examples/record-mode \
+#         --target https://jsonplaceholder.typicode.com \
+#         --api-prefix /api \
+#         --record
+#
+# Or using the directory as config (same thing since this is the only file):
+#   mockr --config examples/record-mode/mockr.toml \
+#         --target https://jsonplaceholder.typicode.com \
+#         --api-prefix /api \
+#         --record
+#
+# Then make requests — each proxied response is saved to stubs/ and an
+# enabled route stub is appended here automatically. The route match uses
+# the stripped path (e.g. /posts, not /api/posts).
+#
+#   http :4000/api/posts
+#   http :4000/api/posts/1
+#   http :4000/api/users
+#   http :4000/api/users/1
+#
+# Serve fully offline after recording (no --record, no --target needed):
+#
+#   mockr --config examples/record-mode --api-prefix /api
+
+# Routes are appended here automatically during --record mode.

@@ -1,0 +1,22 @@
+# Product detail endpoint — wildcard path match
+#
+# Run:
+#   mockr --config examples/basic
+#
+# Try:
+#   http :4000/api/products/1
+#   http :4000/api/products/999    ← switch fallback to "not_found" to test this
+
+[[routes]]
+method   = "GET"
+match    = "/api/products/*"
+enabled  = true
+fallback = "found"
+
+  [routes.cases.found]
+  status = 200
+  file   = "stubs/product-detail.json"
+
+  [routes.cases.not_found]
+  status = 404
+  json   = '{"message": "Product not found"}'

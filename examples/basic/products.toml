@@ -1,0 +1,31 @@
+# Product list endpoint
+#
+# Run:
+#   mockr --config examples/basic
+#
+# Try:
+#   http :4000/api/products
+#
+# Switch cases by editing fallback:
+#   fallback = "success"  → full list from stub file
+#   fallback = "empty"    → empty array
+#   fallback = "error"    → 500 with delay
+
+[[routes]]
+method   = "GET"
+match    = "/api/products"
+enabled  = true
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  file   = "stubs/products.json"
+
+  [routes.cases.empty]
+  status = 200
+  json   = '{"products": []}'
+
+  [routes.cases.error]
+  status = 500
+  json   = '{"message": "Internal Server Error"}'
+  delay  = 1

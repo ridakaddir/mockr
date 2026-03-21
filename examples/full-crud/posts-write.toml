@@ -1,0 +1,114 @@
+# POST / PUT / PATCH / DELETE /api/posts — stateful write operations + conditions
+#
+# Run:
+#   mockr --config examples/full-crud
+#
+# Try:
+#   # Create a post (persisted to stubs/posts.json)
+#   http POST :4000/api/posts id=3 title="New post" body="Hello" author=charlie published:=false
+#
+#   # Create as admin (inline JSON with {{uuid}} / {{now}} — not persisted)
+#   http POST :4000/api/posts X-User-Role:admin title="Admin post" body="Elevated"
+#
+#   # Missing title → 422 validation error
+#   http POST :4000/api/posts body="No title here"
+#
+#   # Update a post (id resolved from path wildcard)
+#   http PUT :4000/api/posts/2 id=2 title="Updated title" body="..." author=bob published:=true
+#
+#   # Partial update
+#   http PATCH :4000/api/posts/1 published:=true
+#
+#   # Delete a post
+#   http DELETE :4000/api/posts/3
+#
+#   # Not found → 404
+#   http DELETE :4000/api/posts/99
+#
+# Reset stub:
+#   git checkout examples/full-crud/stubs/posts.json
+
+# POST — create
+[[routes]]
+method   = "POST"
+match    = "/api/posts"
+enabled  = true
+fallback = "created"
+
+  # Admin: returns inline JSON with template tokens, not saved to file
+  [[routes.conditions]]
+  source = "header"
+  field  = "X-User-Role"
+  op     = "eq"
+  value  = "admin"
+  case   = "admin_created"
+
+  # Missing title: validation error
+  [[routes.conditions]]
+  source = "body"
+  field  = "title"
+  op     = "not_exists"
+  case   = "missing_title"
+
+  [routes.cases.admin_created]
+  status = 201
+  json   = '{"id": "{{uuid}}", "role": "admin", "created_at": "{{now}}", "ts": {{timestamp}}}'
+
+  [routes.cases.missing_title]
+  status = 422
+  json   = '{"error": "Validation failed", "field": "title", "message": "title is required"}'
+
+  [routes.cases.created]
+  status    = 201
+  file      = "stubs/posts.json"
+  persist   = true
+  merge     = "append"
+  array_key = "posts"
+
+
+# PUT — full replace
+[[routes]]
+method   = "PUT"
+match    = "/api/posts/*"
+enabled  = true
+fallback = "updated"
+
+  [routes.cases.updated]
+  status    = 200
+  file      = "stubs/posts.json"
+  persist   = true
+  merge     = "replace"
+  key       = "id"
+  array_key = "posts"
+
+
+# PATCH — partial update (same merge strategy as PUT)
+[[routes]]
+method   = "PATCH"
+match    = "/api/posts/*"
+enabled  = true
+fallback = "patched"
+
+  [routes.cases.patched]
+  status    = 200
+  file      = "stubs/posts.json"
+  persist   = true
+  merge     = "replace"
+  key       = "id"
+  array_key = "posts"
+
+
+# DELETE — remove by id
+[[routes]]
+method   = "DELETE"
+match    = "/api/posts/*"
+enabled  = true
+fallback = "deleted"
+
+  [routes.cases.deleted]
+  status    = 204
+  file      = "stubs/posts.json"
+  persist   = true
+  merge     = "delete"
+  key       = "id"
+  array_key = "posts"

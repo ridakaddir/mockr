@@ -1,0 +1,61 @@
+# Dynamic files — file paths resolved at request time from query params or body fields
+#
+# Run:
+#   mockr --config examples/dynamic-files
+#
+# Try:
+#   # Orders resolved from ?username= query param
+#   http ':4000/api/orders?username=alice'
+#   http ':4000/api/orders?username=bob'
+#
+#   # Unknown user — file not found → falls through to fallback (empty orders)
+#   http ':4000/api/orders?username=unknown'
+#
+#   # Profile resolved from body field (dot-notation: body.id)
+#   http POST :4000/api/profile id=1
+#   http POST :4000/api/profile id=2
+
+# Orders — resolved from ?username= query param
+[[routes]]
+method   = "GET"
+match    = "/api/orders"
+enabled  = true
+fallback = "empty"
+
+  [[routes.conditions]]
+  source = "query"
+  field  = "username"
+  op     = "exists"
+  case   = "by_username"
+
+  [routes.cases.by_username]
+  status = 200
+  # Resolves to: stubs/orders-user-{username}-orders.json
+  file   = "stubs/orders-user-{query.username}-orders.json"
+
+  [routes.cases.empty]
+  status = 200
+  json   = '{"orders": []}'
+
+
+# Profile — resolved from body field (dot-notation)
+[[routes]]
+method   = "POST"
+match    = "/api/profile"
+enabled  = true
+fallback = "not_found"
+
+  [[routes.conditions]]
+  source = "body"
+  field  = "id"
+  op     = "exists"
+  case   = "by_id"
+
+  [routes.cases.by_id]
+  status = 200
+  # Resolves to: stubs/profile-id-{id}-profile.json
+  file   = "stubs/profile-id-{body.id}-profile.json"
+
+  [routes.cases.not_found]
+  status = 404
+  json   = '{"error": "Profile not found"}'

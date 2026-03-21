@@ -1,0 +1,7 @@
+{
+  "products": [
+    { "id": "1", "name": "Wireless Headphones", "price": 79.99, "stock": 42 },
+    { "id": "2", "name": "Mechanical Keyboard",  "price": 129.99, "stock": 15 },
+    { "id": "3", "name": "USB-C Hub",            "price": 34.99, "stock": 200 }
+  ]
+}

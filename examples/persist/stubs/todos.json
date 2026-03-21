@@ -1,0 +1,19 @@
+{
+  "todos": [
+    {
+      "done": false,
+      "id": "1",
+      "title": "Buy groceries"
+    },
+    {
+      "done": false,
+      "id": "2",
+      "title": "Write unit tests"
+    },
+    {
+      "done": true,
+      "id": "3",
+      "title": "Ship the feature"
+    }
+  ]
+}
