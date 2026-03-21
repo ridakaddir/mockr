@@ -1,0 +1,88 @@
+# Response transitions example — simulate order lifecycle state changes over time
+#
+# The route automatically advances through cases based on elapsed time
+# since the first request. No config changes or restarts needed.
+#
+# Timeline (from first request):
+#   t = 0s   → shipped         (immediately)
+#   t = 30s  → out_for_delivery
+#   t = 90s  → delivered       (terminal — stays here)
+#
+# Run:
+#   mockr --config examples/transitions
+#
+# Try (watch the status change as time passes):
+#   watch -n 5 'http :4000/orders/o123'
+#
+# Or manually:
+#   http :4000/orders/o123    # shipped
+#   # wait 30 seconds
+#   http :4000/orders/o123    # out_for_delivery
+#   # wait 60 more seconds
+#   http :4000/orders/o123    # delivered
+#
+# Reset by touching the config file (triggers hot reload):
+#   touch examples/transitions/orders.toml
+
+[[routes]]
+method   = "GET"
+match    = "/orders/*"
+enabled  = true
+fallback = "shipped"
+
+  [[routes.transitions]]
+  case  = "shipped"
+  after = 30            # advance after 30s from first request
+
+  [[routes.transitions]]
+  case  = "out_for_delivery"
+  after = 90            # advance after 90s from first request
+
+  [[routes.transitions]]
+  case  = "delivered"
+  # no after — terminal state
+
+  [routes.cases.shipped]
+  status = 200
+  json   = '{"number": "o123", "status": "shipped", "eta": "2-3 days"}'
+
+  [routes.cases.out_for_delivery]
+  status = 200
+  json   = '{"number": "o123", "status": "out_for_delivery", "eta": "today"}'
+
+  [routes.cases.delivered]
+  status = 200
+  json   = '{"number": "o123", "status": "delivered", "eta": null}'
+
+
+# A faster example for quick testing (use seconds instead of minutes)
+# Uncomment and hit /orders/fast to see transitions in ~10 seconds total
+#
+# [[routes]]
+# method   = "GET"
+# match    = "/orders/fast"
+# enabled  = true
+# fallback = "processing"
+#
+#   [[routes.transitions]]
+#   case  = "processing"
+#   after = 3
+#
+#   [[routes.transitions]]
+#   case  = "shipped"
+#   after = 6
+#
+#   [[routes.transitions]]
+#   case  = "delivered"
+#
+#   [routes.cases.processing]
+#   status = 200
+#   json   = '{"status": "processing"}'
+#
+#   [routes.cases.shipped]
+#   status = 200
+#   json   = '{"status": "shipped"}'
+#
+#   [routes.cases.delivered]
+#   status = 200
+#   json   = '{"status": "delivered"}'
