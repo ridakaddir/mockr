@@ -7,12 +7,19 @@ type Config struct {
 
 // Route defines a single interceptable HTTP endpoint.
 type Route struct {
-	Method     string          `json:"method"     yaml:"method"     toml:"method"`
-	Match      string          `json:"match"      yaml:"match"      toml:"match"`
-	Enabled    *bool           `json:"enabled"    yaml:"enabled"    toml:"enabled"`
-	Fallback   string          `json:"fallback"   yaml:"fallback"   toml:"fallback"`
-	Conditions []Condition     `json:"conditions" yaml:"conditions" toml:"conditions"`
-	Cases      map[string]Case `json:"cases"      yaml:"cases"      toml:"cases"`
+	Method      string          `json:"method"      yaml:"method"      toml:"method"`
+	Match       string          `json:"match"       yaml:"match"       toml:"match"`
+	Enabled     *bool           `json:"enabled"     yaml:"enabled"     toml:"enabled"`
+	Fallback    string          `json:"fallback"    yaml:"fallback"    toml:"fallback"`
+	Conditions  []Condition     `json:"conditions"  yaml:"conditions"  toml:"conditions"`
+	Cases       map[string]Case `json:"cases"       yaml:"cases"       toml:"cases"`
+	Transitions []Transition    `json:"transitions" yaml:"transitions" toml:"transitions"`
+}
+
+// Transition defines one step in a time-based response sequence.
+type Transition struct {
+	Case  string `json:"case"  yaml:"case"  toml:"case"`
+	After int    `json:"after" yaml:"after" toml:"after"` // seconds from first request; 0 = terminal
 }
 
 // IsEnabled returns true if the route is enabled (defaults to true if not set).

@@ -29,13 +29,6 @@ type Server struct {
 
 // NewServer initialises the proxy server.
 func NewServer(opts ServerOptions) (*Server, error) {
-	loader, err := config.NewLoader(opts.ConfigPath, func(cfg *config.Config) {
-		logger.Info("config reloaded", "routes", len(cfg.Routes))
-	})
-	if err != nil {
-		return nil, fmt.Errorf("loading config: %w", err)
-	}
-
 	var rp *httputil.ReverseProxy
 	if opts.Target != "" {
 		var rpErr error
@@ -45,7 +38,19 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		}
 	}
 
-	handler := NewHandler(loader, rp, opts.RecordMode, opts.ApiPrefix)
+	// transitions is created here so we can reference it in the onChange
+	// callback before the handler is fully constructed.
+	ts := newTransitionState()
+
+	loader, err := config.NewLoader(opts.ConfigPath, func(cfg *config.Config) {
+		logger.Info("config reloaded", "routes", len(cfg.Routes))
+		ts.Reset()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("loading config: %w", err)
+	}
+
+	handler := NewHandlerWithTransitions(loader, rp, opts.RecordMode, opts.ApiPrefix, ts)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
