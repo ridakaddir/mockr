@@ -1,0 +1,153 @@
+version: "3"
+
+vars:
+  BINARY: mockr
+  MODULE:
+    sh: go list -m
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  BUILD_FLAGS: -ldflags="-s -w -X main.version={{.VERSION}}"
+
+tasks:
+
+  # ── Build ──────────────────────────────────────────────────────────────────
+
+  build:
+    desc: Build the mockr binary
+    cmds:
+      - go build {{.BUILD_FLAGS}} -o {{.BINARY}} .
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BINARY}}"
+
+  build:race:
+    desc: Build with race detector enabled
+    cmds:
+      - go build -race {{.BUILD_FLAGS}} -o {{.BINARY}} .
+
+  install:
+    desc: Install mockr to $GOPATH/bin
+    cmds:
+      - go install {{.BUILD_FLAGS}} .
+
+  # ── Run ────────────────────────────────────────────────────────────────────
+
+  run:
+    desc: "Run mockr (pass args via CLI_ARGS, e.g. task run -- --config examples/basic)"
+    cmds:
+      - go run . {{.CLI_ARGS}}
+
+  run:basic:
+    desc: Run with the basic example config
+    cmds:
+      - go run . --config examples/basic
+
+  run:full-crud:
+    desc: Run with the full-crud example config
+    cmds:
+      - go run . --config examples/full-crud
+
+  run:record:
+    desc: "Run in record mode (set TARGET env var, e.g. TARGET=https://api.example.com task run:record)"
+    cmds:
+      - go run . --config examples/record-mode --target {{.TARGET}} --api-prefix /api --record
+    requires:
+      vars: [TARGET]
+
+  # ── Test ───────────────────────────────────────────────────────────────────
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./... -v -count=1
+
+  test:short:
+    desc: Run tests excluding long-running ones
+    cmds:
+      - go test ./... -short -count=1
+
+  test:race:
+    desc: Run tests with race detector
+    cmds:
+      - go test -race ./... -count=1
+
+  test:cover:
+    desc: Run tests with coverage report
+    cmds:
+      - go test ./... -coverprofile=coverage.out -covermode=atomic
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report written to coverage.html"
+
+  # ── Lint & Format ──────────────────────────────────────────────────────────
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  lint:fix:
+    desc: Run golangci-lint with auto-fix
+    cmds:
+      - golangci-lint run --fix ./...
+
+  fmt:
+    desc: Format all Go source files
+    cmds:
+      - gofmt -w .
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  # ── Dependencies ───────────────────────────────────────────────────────────
+
+  deps:
+    desc: Download and tidy dependencies
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  deps:update:
+    desc: Update all dependencies to latest minor/patch versions
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  # ── Release ────────────────────────────────────────────────────────────────
+
+  snapshot:
+    desc: Build a local snapshot release with goreleaser (no publish)
+    cmds:
+      - goreleaser release --snapshot --clean
+
+  release:
+    desc: Build and publish a release with goreleaser (requires GITHUB_TOKEN)
+    cmds:
+      - goreleaser release --clean
+    requires:
+      vars: [GITHUB_TOKEN]
+
+  # ── Dev utilities ──────────────────────────────────────────────────────────
+
+  clean:
+    desc: Remove build artifacts and coverage reports
+    cmds:
+      - rm -f {{.BINARY}} coverage.out coverage.html
+      - rm -rf dist/
+
+  check:
+    desc: Run fmt, vet, lint, and tests in sequence
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test
+
+  init:
+    desc: Scaffold a mockr.toml template in the current directory
+    cmds:
+      - go run . --init

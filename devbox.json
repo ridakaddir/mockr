@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
+  "packages": [
+    "go@1.25.1",
+    "golangci-lint@latest",
+    "goreleaser@latest"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo 'mockr dev environment ready. Run: task --list'"
+    ],
+    "scripts": {
+      "build":   ["task build"],
+      "test":    ["task test"],
+      "lint":    ["task lint"],
+      "run":     ["task run"],
+      "release": ["task release"]
+    }
+  }
+}

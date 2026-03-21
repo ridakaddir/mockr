@@ -10,6 +10,8 @@ mokr
 # Go build cache
 *.test
 *.out
+coverage.out
+coverage.html
 /dist/
 
 # Dependency directories
@@ -19,6 +21,9 @@ vendor/
 .env
 .env.*
 !.env.example
+
+# Task cache
+.task/
 
 # IDE
 .idea/
