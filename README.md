@@ -25,6 +25,7 @@ Point your frontend at `mockr` instead of the real API. Mock only the endpoints 
 - **CORS** — all responses include CORS headers automatically
 - **Response templating** — `{{uuid}}`, `{{now}}`, `{{timestamp}}` in inline JSON values
 - **Multi-format config** — TOML, YAML, or JSON — auto-detected by file extension
+- **OpenAPI generation** — generate a complete mockr config from any OpenAPI 3 spec (file or URL)
 
 ---
 
@@ -66,11 +67,20 @@ go build -o mockr .
 
 ## Quick start
 
+**Option 1 — from an OpenAPI spec (fastest):**
+
 ```sh
-# 1. Scaffold a config file and example stubs
+mockr generate --spec openapi.yaml --out ./mocks
+mockr --config ./mocks
+```
+
+**Option 2 — scaffold a config manually:**
+
+```sh
+# Scaffold a config file and example stubs
 mockr --init
 
-# 2. Start the server
+# Start the server
 mockr --target https://api.example.com
 ```
 
@@ -94,6 +104,117 @@ Flags:
       --record               Record mode: proxy all requests and save responses as stubs
   -h, --help
   -v, --version
+
+Subcommands:
+  generate    Generate a mockr config from an OpenAPI spec (see Generate section)
+```
+
+---
+
+## Generate
+
+Generate a complete mockr config directory from an OpenAPI 3 spec in one command. Works with local files and remote URLs.
+
+```sh
+# From a local file
+mockr generate --spec openapi.yaml --out ./mocks
+
+# From a remote URL
+mockr generate --spec https://petstore3.swagger.io/api/v3/openapi.json --out ./mocks
+
+# YAML format, single file instead of one per tag
+mockr generate --spec openapi.yaml --format yaml --split=false
+```
+
+Then serve immediately — no editing required:
+
+```sh
+mockr --config ./mocks
+```
+
+### What is generated
+
+For each path + operation in the spec:
+
+- One config file per tag (e.g. `users.toml`, `orders.toml`) containing one route per operation
+- One stub JSON file per response status code in `stubs/`
+- OpenAPI path parameters (`{id}`) are converted to mockr wildcards (`*`)
+- The first 2xx response is set as the route `fallback`
+
+**Example output for the Petstore spec:**
+
+```
+mocks/
+├── pet.toml        # 13 routes
+├── store.toml      #  3 routes
+├── user.toml       #  3 routes
+└── stubs/
+    ├── get_pet_petId_200.json
+    ├── get_pet_findByStatus_200.json
+    ├── post_pet_200.json
+    └── ... (42 more)
+```
+
+**Generated config file (`pet.toml`):**
+
+```toml
+# Generated from openapi.yaml
+# Tag: pet
+
+# Returns pets based on status
+[[routes]]
+method   = "GET"
+match    = "/pet/findByStatus"
+enabled  = true
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  file   = "stubs/get_pet_findByStatus_200.json"
+
+  [routes.cases.bad_request]
+  status = 400
+  file   = "stubs/get_pet_findByStatus_400.json"
+```
+
+### Stub quality
+
+Stubs are populated in priority order:
+
+| Priority | Source | Description |
+|---|---|---|
+| 1 | Spec `examples` | Used verbatim when present in the spec |
+| 2 | Schema `example` / `default` / `enum` | First value used |
+| 3 | Schema synthesis | Objects built from properties, arrays of one item, strings with format hints |
+
+Format hints in synthesised stubs:
+
+| Schema format | Synthesised value |
+|---|---|
+| `uuid` | `"{{uuid}}"` — rendered as a real UUID at request time |
+| `date-time` | `"{{now}}"` — rendered as RFC3339 timestamp at request time |
+| `date` | `"2026-01-01"` |
+| `email` | `"user@example.com"` |
+| `uri` | `"https://example.com"` |
+
+### `generate` flags
+
+```
+mockr generate [flags]
+
+Flags:
+  -s, --spec    <file|url>   OpenAPI spec file path or URL          (required)
+  -o, --out     <dir>        Output directory for config and stubs  (default: mocks)
+  -f, --format  <fmt>        Config format: toml, yaml, json        (default: toml)
+      --split                One file per tag; use --split=false for a single file (default: true)
+```
+
+### Using Task
+
+```sh
+task generate SPEC=openapi.yaml
+task generate SPEC=https://petstore3.swagger.io/api/v3/openapi.json
+task generate SPEC=openapi.yaml OUT=./petstore
 ```
 
 ---
@@ -489,11 +610,17 @@ See [`examples/README.md`](examples/README.md) for curl commands for each exampl
 mockr/
 ├── main.go
 ├── cmd/
-│   └── root.go              # CLI entry point (cobra)
+│   ├── root.go              # CLI entry point (cobra)
+│   └── generate.go          # generate subcommand
 ├── internal/
 │   ├── config/
 │   │   ├── types.go          # Config, Route, Condition, Case structs
 │   │   └── loader.go         # File + directory loader, fsnotify hot reload
+│   ├── generate/
+│   │   ├── generator.go      # Orchestrator: load spec → parse → write
+│   │   ├── parser.go         # kin-openapi wrapper: load spec (file/URL), parse operations
+│   │   ├── synth.go          # Schema → synthetic example JSON
+│   │   └── writer.go         # Write TOML/YAML/JSON config + stub files
 │   ├── logger/
 │   │   └── logger.go         # Pretty terminal request logger (via=stub/proxy)
 │   └── proxy/
@@ -531,16 +658,18 @@ task --list
 ### Common tasks
 
 ```sh
-task build          # compile binary
-task test           # go test ./... -race
-task lint           # golangci-lint
-task fmt            # gofmt -w .
-task vet            # go vet ./...
-task check          # fmt + vet + lint + test in one shot
-task run:basic      # run with examples/basic config
-task run:full-crud  # run with examples/full-crud config
-task snapshot       # local goreleaser build (no publish)
-task clean          # remove binary and build artifacts
+task build                                          # compile binary
+task test                                           # go test ./... -race
+task lint                                           # golangci-lint
+task fmt                                            # gofmt -w .
+task vet                                            # go vet ./...
+task check                                          # fmt + vet + lint + test in one shot
+task run:basic                                      # run with examples/basic config
+task run:full-crud                                  # run with examples/full-crud config
+task generate SPEC=openapi.yaml                     # generate from local spec
+task generate SPEC=https://petstore3.swagger.io/api/v3/openapi.json  # generate from URL
+task snapshot                                       # local goreleaser build (no publish)
+task clean                                          # remove binary and build artifacts
 ```
 
 ### Without devbox
