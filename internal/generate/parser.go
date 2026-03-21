@@ -2,6 +2,7 @@ package generate
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -59,14 +60,9 @@ func loadFromURL(loader *openapi3.Loader, rawURL string) (*openapi3.T, error) {
 		return nil, fmt.Errorf("fetching spec: HTTP %d from %s", resp.StatusCode, rawURL)
 	}
 
-	buf := make([]byte, 0, 1<<20)
-	tmp := make([]byte, 4096)
-	for {
-		n, readErr := resp.Body.Read(tmp)
-		buf = append(buf, tmp[:n]...)
-		if readErr != nil {
-			break
-		}
+	buf, readErr := io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32 MB limit
+	if readErr != nil {
+		return nil, fmt.Errorf("reading spec body from %s: %w", rawURL, readErr)
 	}
 
 	return loader.LoadFromData(buf)
@@ -155,7 +151,10 @@ func parseResponses(op *openapi3.Operation, doc *openapi3.T) ([]OperationRespons
 		}
 		resp := ref.Value
 
-		statusCode := 200
+		// OpenAPI "default" is a catch-all — map to 0 so mockr uses its own
+		// default (200) at runtime and the stub filename doesn't collide with
+		// a real 200 response.
+		statusCode := 0
 		if code != "default" {
 			if n, err := strconv.Atoi(code); err == nil {
 				statusCode = n
@@ -200,15 +199,22 @@ func parseResponses(op *openapi3.Operation, doc *openapi3.T) ([]OperationRespons
 	return responses, nil
 }
 
-// pickMediaType prefers application/json, then first available.
+// pickMediaType prefers application/json, then first available in sorted order
+// to ensure deterministic output across runs.
 func pickMediaType(content openapi3.Content) (string, *openapi3.MediaType) {
 	if mt, ok := content["application/json"]; ok {
 		return "application/json", mt
 	}
-	for ct, mt := range content {
-		return ct, mt
+	if len(content) == 0 {
+		return "", nil
 	}
-	return "", nil
+	cts := make([]string, 0, len(content))
+	for ct := range content {
+		cts = append(cts, ct)
+	}
+	sort.Strings(cts)
+	ct := cts[0]
+	return ct, content[ct]
 }
 
 // extractExample tries to get a JSON-encodable example from the media type.
@@ -220,14 +226,30 @@ func extractExample(mt *openapi3.MediaType) []byte {
 		}
 	}
 
-	// 2. Named examples map.
-	for _, exRef := range mt.Examples {
-		if exRef == nil || exRef.Value == nil {
-			continue
+	// 2. Named examples map — iterate in sorted key order for determinism.
+	// Prefer keys named "default" or "example" first, then alphabetical.
+	if len(mt.Examples) > 0 {
+		keys := make([]string, 0, len(mt.Examples))
+		for k := range mt.Examples {
+			keys = append(keys, k)
 		}
-		if exRef.Value.Value != nil {
-			if b := marshalExample(exRef.Value.Value); b != nil {
-				return b
+		sort.Slice(keys, func(i, j int) bool {
+			// Prefer "default" and "example" keys first.
+			pi, pj := exampleKeyPriority(keys[i]), exampleKeyPriority(keys[j])
+			if pi != pj {
+				return pi < pj
+			}
+			return keys[i] < keys[j]
+		})
+		for _, k := range keys {
+			exRef := mt.Examples[k]
+			if exRef == nil || exRef.Value == nil {
+				continue
+			}
+			if exRef.Value.Value != nil {
+				if b := marshalExample(exRef.Value.Value); b != nil {
+					return b
+				}
 			}
 		}
 	}
@@ -253,6 +275,17 @@ func openAPIPathToMockr(path string) string {
 		}
 	}
 	return strings.Join(parts, "/")
+}
+
+// exampleKeyPriority gives lower numbers to preferred example key names.
+func exampleKeyPriority(key string) int {
+	switch strings.ToLower(key) {
+	case "default":
+		return 0
+	case "example":
+		return 1
+	}
+	return 2
 }
 
 // slugifyTag converts a tag name to a safe filename segment.

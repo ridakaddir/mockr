@@ -24,7 +24,7 @@ var generateCmd = &cobra.Command{
 Examples:
   mockr generate --spec openapi.yaml --out ./mocks
   mockr generate --spec https://petstore3.swagger.io/api/v3/openapi.json --out ./mocks
-  mockr generate --spec openapi.yaml --format yaml --no-split`,
+  mockr generate --spec openapi.yaml --format yaml --split=false`,
 	RunE: runGenerate,
 }
 

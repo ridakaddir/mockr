@@ -259,8 +259,11 @@ func pathSlug(path string) string {
 }
 
 // statusCaseName maps an HTTP status code to a human-readable case name.
+// code 0 is used for OpenAPI "default" responses.
 func statusCaseName(code int) string {
 	switch code {
+	case 0:
+		return "default"
 	case 200:
 		return "success"
 	case 201:
@@ -291,7 +294,7 @@ func statusCaseName(code int) string {
 		return fmt.Sprintf("error_%d", code)
 	}
 	if code >= 500 {
-		return "error"
+		return fmt.Sprintf("error_%d", code)
 	}
 	return fmt.Sprintf("status_%d", code)
 }

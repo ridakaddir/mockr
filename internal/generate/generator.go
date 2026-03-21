@@ -29,6 +29,17 @@ func Run(opts Options) (*Result, error) {
 	if opts.Format == "" {
 		opts.Format = "toml"
 	}
+	// Accept "yml" as an alias for "yaml".
+	if opts.Format == "yml" {
+		opts.Format = "yaml"
+	}
+	// Validate format.
+	switch opts.Format {
+	case "toml", "yaml", "json":
+		// valid
+	default:
+		return nil, fmt.Errorf("unsupported format %q — use toml, yaml, or json", opts.Format)
+	}
 	if opts.OutDir == "" {
 		opts.OutDir = "mocks"
 	}
