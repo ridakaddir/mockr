@@ -37,6 +37,11 @@ vendor/
 examples/record-mode/recorded.toml
 examples/record-mode/stubs/
 
+# openapi-generate example — generated output (regenerate with: mockr generate ...)
+examples/openapi-generate/mocks/
+examples/openapi-generate/mocks-yaml/
+examples/openapi-generate/mocks-single/
+
 # Any local mockr config and stubs at the project root (from --init runs)
 /mockr.toml
 /mockr.yaml

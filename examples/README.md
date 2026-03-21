@@ -37,8 +37,11 @@ examples/
 │   ├── posts-write.toml      # POST/PUT/PATCH/DELETE — persist + conditions
 │   └── stubs/
 │
-└── record-mode/              # Proxy + auto-record workflow
-    └── mockr.toml
+├── record-mode/              # Proxy + auto-record workflow
+│   └── mockr.toml
+│
+└── openapi-generate/         # Generate config from an OpenAPI spec
+    └── README.md             # Instructions (generated files not committed)
 ```
 
 ---
@@ -179,6 +182,34 @@ http DELETE :4000/api/posts/99
 ```
 
 Reset: `git checkout examples/full-crud/stubs/posts.json`
+
+---
+
+## openapi-generate
+
+Generate a complete mockr config from the [Swagger Petstore v3](https://petstore3.swagger.io) spec — no config writing required.
+
+```sh
+mockr generate \
+  --spec https://petstore3.swagger.io/api/v3/openapi.json \
+  --out examples/openapi-generate/mocks
+```
+
+Then serve immediately:
+
+```sh
+mockr --config examples/openapi-generate/mocks
+```
+
+```sh
+http ':4000/pet/findByStatus?status=available'  # 200 — list of pets
+http :4000/pet/1                                 # 200 — single pet
+http POST :4000/pet name=Rex photoUrls:='[]'     # 200 — create pet
+http :4000/store/inventory                       # 200 — inventory map
+http :4000/user/johndoe                          # 200 — user profile
+```
+
+The generated `mocks/` directory is gitignored — regenerate it any time. See [`openapi-generate/README.md`](openapi-generate/README.md) for the full workflow including format options and hot-reload tips.
 
 ---
 
