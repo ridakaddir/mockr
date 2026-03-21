@@ -117,6 +117,20 @@ tasks:
       - go get -u ./...
       - go mod tidy
 
+  # ── OpenAPI ────────────────────────────────────────────────────────────────
+
+  generate:
+    desc: "Generate mockr config from an OpenAPI spec (SPEC=<file|url> OUT=./mocks)"
+    cmds:
+      - go run . generate --spec {{.SPEC}} --out {{.OUT | default "mocks"}} {{.CLI_ARGS}}
+    requires:
+      vars: [SPEC]
+
+  generate:petstore:
+    desc: Generate from the OpenAPI Petstore v3 (quick smoke test)
+    cmds:
+      - go run . generate --spec https://petstore3.swagger.io/api/v3/openapi.json --out /tmp/petstore-mocks
+
   # ── Release ────────────────────────────────────────────────────────────────
 
   snapshot:
