@@ -22,7 +22,9 @@ func defaultConfig() string {
 	return "."
 }
 
-const version = "0.1.0"
+// version is set at build time via -ldflags "-X github.com/ridakaddir/mockr/cmd.version=<tag>"
+// Falls back to "dev" for local builds without a tag.
+var version = "dev"
 
 var (
 	target     string
