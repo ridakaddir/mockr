@@ -7,6 +7,8 @@ vars:
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
   BUILD_FLAGS: -ldflags="-s -w -X github.com/ridakaddir/mockr/cmd.version={{.VERSION}}"
+  GOLANGCI_LINT_VERSION: v2.11.3   # keep in sync with .github/workflows/ci.yml
+  GOLANGCI_LINT_BIN: /tmp/golangci-lint-ci/golangci-lint
 
 tasks:
 
@@ -104,9 +106,20 @@ tasks:
   # ── Lint & Format ──────────────────────────────────────────────────────────
 
   lint:
-    desc: Run golangci-lint
+    desc: Run golangci-lint (locally installed version)
     cmds:
       - golangci-lint run ./...
+
+  lint:ci:
+    desc: "Run golangci-lint at the exact CI version ({{.GOLANGCI_LINT_VERSION}}) — installs to /tmp if needed"
+    cmds:
+      - |
+        if [ ! -f "{{.GOLANGCI_LINT_BIN}}" ]; then
+          echo "Installing golangci-lint {{.GOLANGCI_LINT_VERSION}} to /tmp/golangci-lint-ci ..."
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b /tmp/golangci-lint-ci {{.GOLANGCI_LINT_VERSION}}
+        fi
+      - "{{.GOLANGCI_LINT_BIN}} run ./..."
 
   lint:fix:
     desc: Run golangci-lint with auto-fix
@@ -186,12 +199,19 @@ tasks:
       - rm -rf dist/
 
   check:
-    desc: Run fmt, vet, lint, and tests in sequence
+    desc: Run fmt, vet, lint (CI version), and tests in sequence
     cmds:
       - task: fmt
       - task: vet
-      - task: lint
+      - task: lint:ci
       - task: test
+
+  hooks:
+    desc: Install git hooks (pre-push runs lint:ci automatically before every push)
+    cmds:
+      - cp scripts/pre-push .git/hooks/pre-push
+      - chmod +x .git/hooks/pre-push
+      - echo "pre-push hook installed — lint:ci will run before every git push"
 
   init:
     desc: Scaffold a mockr.toml template in the current directory

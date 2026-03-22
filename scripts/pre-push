@@ -1,0 +1,28 @@
+#!/bin/sh
+# pre-push hook — runs golangci-lint at the exact CI version before every push.
+# Install with: task hooks
+#
+# To skip in an emergency: git push --no-verify
+
+GOLANGCI_LINT_VERSION="v2.11.3"   # keep in sync with .github/workflows/ci.yml and Taskfile.yml
+GOLANGCI_LINT_BIN="/tmp/golangci-lint-ci/golangci-lint"
+
+echo "pre-push: running golangci-lint ${GOLANGCI_LINT_VERSION} ..."
+
+if [ ! -f "${GOLANGCI_LINT_BIN}" ]; then
+  echo "pre-push: installing golangci-lint ${GOLANGCI_LINT_VERSION} to /tmp/golangci-lint-ci ..."
+  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+    | sh -s -- -b /tmp/golangci-lint-ci "${GOLANGCI_LINT_VERSION}"
+fi
+
+"${GOLANGCI_LINT_BIN}" run ./...
+STATUS=$?
+
+if [ ${STATUS} -ne 0 ]; then
+  echo ""
+  echo "pre-push: lint failed — push blocked."
+  echo "Fix the issues above, or use 'git push --no-verify' to skip (CI will still catch them)."
+  exit 1
+fi
+
+echo "pre-push: lint passed."
