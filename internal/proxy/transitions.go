@@ -39,15 +39,15 @@ func routeKey(route *config.Route) string {
 // Resolution logic:
 //  1. Record time.Now() as t0 on the very first request.
 //  2. elapsed = time.Since(t0)
-//  3. Walk transitions in order. Each entry with After > 0 is a threshold.
-//     Serve the last entry whose threshold has NOT yet been crossed.
-//     If all thresholds are crossed, serve the last (terminal) entry.
+//  3. Walk transitions in order. Return the case for the first entry whose
+//     After threshold is still in the future (elapsedSecs < entry.After).
+//     Once all thresholds are crossed, serve the terminal (last) entry.
 //
-// Example with after=[30, 90, 0]:
+// Example with after=[30, 90, terminal]:
 //
-//	elapsed < 30s  → transitions[0].Case
-//	30s ≤ elapsed < 90s → transitions[1].Case
-//	elapsed ≥ 90s  → transitions[2].Case  (terminal, After == 0)
+//	elapsed < 30s       → transitions[0].Case  (shipped)
+//	30s ≤ elapsed < 90s → transitions[1].Case  (out_for_delivery)
+//	elapsed ≥ 90s       → transitions[2].Case  (delivered — terminal)
 func (ts *transitionState) resolve(route *config.Route) string {
 	if len(route.Transitions) == 0 {
 		return ""
@@ -66,13 +66,15 @@ func (ts *transitionState) resolve(route *config.Route) string {
 	elapsed := time.Since(t0)
 	elapsedSecs := int(elapsed.Seconds())
 
-	// Walk transitions: serve the last one whose After threshold hasn't been
-	// reached yet. The terminal entry (After == 0) always matches.
+	// Default to the terminal (last) entry — used when all thresholds are crossed.
 	current := route.Transitions[len(route.Transitions)-1].Case
 
+	// Walk non-terminal entries: return the first one whose After threshold is
+	// still in the future. Entries with After == 0 in a non-terminal position
+	// are skipped (they would lock the route permanently into that stage).
 	for i := 0; i < len(route.Transitions)-1; i++ {
 		t := route.Transitions[i]
-		if t.After == 0 || elapsedSecs < t.After {
+		if t.After > 0 && elapsedSecs < t.After {
 			current = t.Case
 			break
 		}

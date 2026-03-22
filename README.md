@@ -26,7 +26,7 @@ Point your frontend at `mockr` instead of the real API. Mock only the endpoints 
 - **Response templating** — `{{uuid}}`, `{{now}}`, `{{timestamp}}` in inline JSON values
 - **Multi-format config** — TOML, YAML, or JSON — auto-detected by file extension
 - **OpenAPI generation** — generate a complete mockr config from any OpenAPI 3 spec (file or URL)
-- **Response transitions** — automatically advance through a sequence of cases over time (e.g. `shipped` → `delivered` after 30s)
+- **Response transitions** — automatically advance through a sequence of cases over time (e.g. `shipped` → `out_for_delivery` → `delivered`, with `shipped` → `out_for_delivery` after 30s)
 
 ---
 
