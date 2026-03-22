@@ -289,7 +289,7 @@ match    = "/users.UserService/GetUser"
 enabled  = true
 fallback = "ok"
 
-  # Condition on a request body field (protojson field name)
+  # Condition on a request body field (snake_case or camelCase both work)
   [[grpc_routes.conditions]]
   source = "body"
   field  = "user_id"
@@ -363,12 +363,12 @@ json   = '{"userId": "{{uuid}}", "createdAt": "{{now}}"}'
 
 #### Conditions on gRPC requests
 
-Conditions evaluate fields from the decoded request message. Use `source = "body"` and dot-notation field paths (using protojson field names):
+Conditions evaluate fields from the decoded request message. Use `source = "body"` and dot-notation field paths. Both the proto field name (`payment_type`) and its camelCase equivalent (`paymentType`) are accepted automatically:
 
 ```toml
 [[grpc_routes.conditions]]
 source = "body"
-field  = "payment_type"   # protojson field name (camelCase)
+field  = "payment_type"   # snake_case or camelCase both work
 op     = "eq"
 value  = "crypto"
 case   = "pending_review"
@@ -467,7 +467,7 @@ fallback = "deleted"
 | Key field missing from request | `3` INVALID_ARGUMENT |
 | Stub file unreadable / parse error | `13` INTERNAL |
 
-**Response body:** `append` and `replace` return the affected record encoded as proto. `delete` returns an empty response with code `0` OK.
+**Response body:** all persist operations return an empty proto response (`{}`). The gRPC status code signals success or failure — inspect the stub file directly or follow up with a list/get call to confirm the mutation.
 
 #### Transitions
 
@@ -637,14 +637,14 @@ Mix formats freely — TOML, YAML, and JSON can coexist in the same directory.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `status` | int | `200` | HTTP status code |
+| `status` | int | `200` | HTTP status code — or gRPC status code for `[[grpc_routes]]` (e.g. `0` = OK, `5` = NOT_FOUND) |
 | `json` | string | — | Inline JSON body (supports [template tokens](#template-tokens)) |
 | `file` | string | — | Stub file path (supports [dynamic resolution](#dynamic-file-resolution)) |
 | `delay` | int | `0` | Seconds to wait before responding |
-| `persist` | bool | `false` | Write request body back into the stub file |
+| `persist` | bool | `false` | Mutate the stub file on disk (append / replace / delete) |
 | `merge` | string | — | `append`, `replace`, or `delete` (requires `persist: true`) |
-| `key` | string | — | Field to locate a record for `replace`/`delete` |
-| `array_key` | string | — | Array field inside the stub JSON to operate on |
+| `key` | string | — | Field in the stored record to match on for `replace`/`delete` |
+| `array_key` | string | — | Top-level array field inside the stub JSON to operate on |
 
 ---
 
@@ -1067,14 +1067,18 @@ mockr/
 │   │   ├── writer.go         # Write TOML/YAML/JSON config + stub files (OpenAPI)
 │   │   └── proto_generator.go# Proto → grpc_routes config + stub files
 │   ├── grpc/
+│   │   ├── codec.go          # Raw-bytes passthrough codec (enables unknown-service handler)
 │   │   ├── descriptor.go     # Runtime proto registry (jhump/protoreflect, no protoc)
-│   │   ├── handler.go        # gRPC unknown-service handler: match → condition → mock/proxy
 │   │   ├── forward.go        # Transparent h2c proxy to upstream gRPC server
+│   │   ├── handler.go        # gRPC unknown-service handler: match → condition → mock/proxy
+│   │   ├── persist.go        # gRPC stateful mutations (append / replace / delete)
 │   │   ├── server.go         # grpc.Server lifecycle + reflection
 │   │   ├── template.go       # {{uuid}} / {{now}} / {{timestamp}} rendering for gRPC stubs
 │   │   └── transitions.go    # Time-based transition state for gRPC routes
 │   ├── logger/
 │   │   └── logger.go         # Pretty terminal logger (HTTP + gRPC, via=stub/proxy)
+│   ├── persist/
+│   │   └── persist.go        # Transport-agnostic stub file mutations (shared by HTTP + gRPC)
 │   └── proxy/
 │       ├── server.go         # HTTP server + CORS middleware
 │       ├── handler.go        # Per-request dispatch
@@ -1082,7 +1086,7 @@ mockr/
 │       ├── conditions.go     # Condition evaluation (body / query / header)
 │       ├── dynamic_file.go   # {source.field} placeholder resolution
 │       ├── mock.go           # Serve mock responses + template rendering
-│       ├── persist.go        # Stateful stub file mutations
+│       ├── persist.go        # HTTP persist wrapper (uses internal/persist)
 │       ├── transitions.go    # Time-based response transition state
 │       ├── forward.go        # Reverse proxy to upstream
 │       └── record.go         # Record mode + --init scaffold
@@ -1097,7 +1101,8 @@ mockr/
 │   ├── openapi-generate/     # HTTP — generate from OpenAPI spec
 │   ├── grpc-mock/            # gRPC — basic unary mock
 │   ├── grpc-conditions/      # gRPC — condition routing on body fields
-│   └── grpc-proxy/           # gRPC — selective mock + upstream proxy fallthrough
+│   ├── grpc-proxy/           # gRPC — selective mock + upstream proxy fallthrough
+│   └── grpc-persist/         # gRPC — stateful CRUD backed by a stub file
 ├── Taskfile.yml              # Dev task runner
 ├── devbox.json               # Reproducible dev environment
 └── .goreleaser.yml           # Cross-platform release builds
@@ -1130,8 +1135,14 @@ task vet                                            # go vet ./...
 task check                                          # fmt + vet + lint + test in one shot
 task run:basic                                      # run with examples/basic config
 task run:full-crud                                  # run with examples/full-crud config
-task generate SPEC=openapi.yaml                     # generate from local spec
+task run:grpc-mock                                  # run gRPC basic mock example
+task run:grpc-conditions                            # run gRPC conditions example
+task run:grpc-proxy                                 # run gRPC proxy example (GRPC_TARGET=addr)
+task run:grpc-persist                               # run gRPC stateful CRUD example
+task generate SPEC=openapi.yaml                     # generate from local OpenAPI spec
 task generate SPEC=https://petstore3.swagger.io/api/v3/openapi.json  # generate from URL
+task generate:proto PROTO=service.proto             # generate from a .proto file
+task generate:proto:example                         # regenerate grpc-mock example (smoke test)
 task snapshot                                       # local goreleaser build (no publish)
 task clean                                          # remove binary and build artifacts
 ```
