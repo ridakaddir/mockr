@@ -266,7 +266,9 @@ func evalGRPCCondition(cond config.Condition, bodyBytes []byte) bool {
 	return false
 }
 
-// extractGRPCBodyField walks dot-notation path in JSON bytes — same logic as proxy/conditions.go.
+// extractGRPCBodyField walks dot-notation path in the protojson-decoded map.
+// Field names are tried as-is first (camelCase protojson convention), then
+// converted from snake_case, so both "paymentType" and "payment_type" work.
 func extractGRPCBodyField(dotPath string, body []byte) (string, bool) {
 	if len(body) == 0 {
 		return "", false
@@ -282,9 +284,13 @@ func extractGRPCBodyField(dotPath string, body []byte) (string, bool) {
 		if !ok {
 			return "", false
 		}
+		// Try the field name as-is first, then camelCase conversion.
 		v, exists := m[part]
 		if !exists {
-			return "", false
+			v, exists = m[snakeToCamel(part)]
+			if !exists {
+				return "", false
+			}
 		}
 		current = v
 	}
@@ -318,4 +324,25 @@ func mapToJSONBytes(m map[string]interface{}) []byte {
 	}
 	b, _ := json.Marshal(m)
 	return b
+}
+
+// snakeToCamel converts a snake_case field name to lowerCamelCase.
+// e.g. "payment_type" → "paymentType", "user_id" → "userId".
+func snakeToCamel(s string) string {
+	parts := strings.Split(s, "_")
+	if len(parts) == 1 {
+		return s
+	}
+	var b strings.Builder
+	for i, p := range parts {
+		if i == 0 {
+			b.WriteString(p)
+			continue
+		}
+		if len(p) > 0 {
+			b.WriteByte(p[0] - 32) // uppercase first letter
+			b.WriteString(p[1:])
+		}
+	}
+	return b.String()
 }

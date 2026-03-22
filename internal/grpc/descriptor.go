@@ -2,18 +2,23 @@ package grpc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jhump/protoreflect/desc"
 	"github.com/jhump/protoreflect/desc/protoparse"
 	"github.com/jhump/protoreflect/dynamic"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoregistry"
 )
 
 // Registry compiles .proto files at startup and provides method/message lookup
 // and JSON ↔ proto transcoding without requiring protoc code generation.
 type Registry struct {
-	methods map[string]*desc.MethodDescriptor // key: "/package.Service/Method"
-	factory *dynamic.MessageFactory
+	methods  map[string]*desc.MethodDescriptor // key: "/package.Service/Method"
+	services map[string]*desc.ServiceDescriptor
+	files    []*desc.FileDescriptor
+	factory  *dynamic.MessageFactory
 }
 
 // NewRegistry parses the given .proto files and builds a method registry.
@@ -38,8 +43,10 @@ func NewRegistry(protoFiles []string, importPaths []string) (*Registry, error) {
 	}
 
 	methods := make(map[string]*desc.MethodDescriptor)
+	services := make(map[string]*desc.ServiceDescriptor)
 	for _, fd := range fds {
 		for _, svc := range fd.GetServices() {
+			services[svc.GetFullyQualifiedName()] = svc
 			for _, m := range svc.GetMethods() {
 				key := fmt.Sprintf("/%s/%s", svc.GetFullyQualifiedName(), m.GetName())
 				methods[key] = m
@@ -48,8 +55,10 @@ func NewRegistry(protoFiles []string, importPaths []string) (*Registry, error) {
 	}
 
 	return &Registry{
-		methods: methods,
-		factory: dynamic.NewMessageFactoryWithDefaults(),
+		methods:  methods,
+		services: services,
+		files:    fds,
+		factory:  dynamic.NewMessageFactoryWithDefaults(),
 	}, nil
 }
 
@@ -70,6 +79,42 @@ func (r *Registry) Methods() []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// ServiceNames returns the fully-qualified service names from loaded protos.
+// Used to populate the gRPC reflection service.
+func (r *Registry) ServiceNames() []string {
+	out := make([]string, 0, len(r.services))
+	for name := range r.services {
+		out = append(out, name)
+	}
+	return out
+}
+
+// DescriptorResolver returns a protodesc.Resolver backed by the loaded file
+// descriptors. Used to wire proto schemas into the gRPC reflection service.
+func (r *Registry) DescriptorResolver() protodesc.Resolver {
+	files := &protoregistry.Files{}
+	for _, fd := range r.files {
+		// Walk every file and all its transitive dependencies.
+		_ = registerFile(files, fd)
+	}
+	return files
+}
+
+// registerFile adds fd and all its imports to the registry, skipping duplicates.
+func registerFile(reg *protoregistry.Files, fd *desc.FileDescriptor) error {
+	pfd := fd.UnwrapFile()
+	if _, err := reg.FindFileByPath(pfd.Path()); err == nil {
+		return nil // already registered
+	}
+	// Register imports first.
+	for _, dep := range fd.GetDependencies() {
+		if err := registerFile(reg, dep); err != nil && !errors.Is(err, protoregistry.NotFound) {
+			return err
+		}
+	}
+	return reg.RegisterFile(pfd)
 }
 
 // DecodeRequest deserialises the raw protobuf bytes of a request message into

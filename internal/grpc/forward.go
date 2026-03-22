@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -16,9 +17,10 @@ import (
 // rawReq contains the already-received request bytes from the client stream.
 // The upstream is reached over plain h2c (no TLS).
 func forwardGRPC(stream grpc.ServerStream, target, fullMethod string, rawReq []byte) error {
-	// Dial the upstream with plain h2c (insecure credentials).
+	// Dial the upstream using the same raw-bytes codec so frames are relayed verbatim.
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.ForceCodec(encoding.GetCodec("proto"))),
 	)
 	if err != nil {
 		return status.Errorf(codes.Unavailable, "dial upstream %q: %v", target, err)
@@ -42,7 +44,7 @@ func forwardGRPC(stream grpc.ServerStream, target, fullMethod string, rawReq []b
 		return status.Errorf(codes.Unavailable, "open upstream stream: %v", err)
 	}
 
-	// Send the raw request bytes upstream.
+	// Send the raw request bytes upstream (*[]byte → rawCodec passes through unchanged).
 	if err := clientStream.SendMsg(&rawReq); err != nil {
 		return status.Errorf(codes.Internal, "send to upstream: %v", err)
 	}

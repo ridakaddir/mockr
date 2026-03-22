@@ -9,6 +9,8 @@ import (
 	"github.com/ridakaddir/mockr/internal/logger"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	v1reflectiongrpc "google.golang.org/grpc/reflection/grpc_reflection_v1"
+	v1alphareflectiongrpc "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 )
 
 // ServerOptions holds all configuration for the gRPC server.
@@ -51,8 +53,22 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		grpc.UnknownServiceHandler(h.serve),
 	)
 
-	// Enable gRPC server reflection so tools like grpcurl work out of the box.
-	reflection.Register(srv)
+	// Register the reflection service with our proto-aware descriptor resolver
+	// and service name list. This lets grpcurl / grpc-ui discover our services
+	// even though we use UnknownServiceHandler instead of registered stubs.
+	svcNames := registry.ServiceNames()
+	if len(svcNames) > 0 {
+		svrOpts := reflection.ServerOptions{
+			Services:           &protoServiceInfoProvider{names: svcNames},
+			DescriptorResolver: registry.DescriptorResolver(),
+		}
+		// Register both v1 and v1alpha so all versions of grpcurl work.
+		v1alphareflectiongrpc.RegisterServerReflectionServer(srv, reflection.NewServer(svrOpts))
+		v1reflectiongrpc.RegisterServerReflectionServer(srv, reflection.NewServerV1(svrOpts))
+	} else {
+		// No proto loaded — fall back to standard reflection.
+		reflection.Register(srv)
+	}
 
 	return &Server{
 		opts:    opts,
@@ -95,4 +111,19 @@ func (s *Server) Start(ctx context.Context) error {
 // Called from the config loader's onChange callback.
 func (s *Server) NotifyReload() {
 	s.handler.resetTransitions()
+}
+
+// protoServiceInfoProvider satisfies reflection.ServiceInfoProvider using our
+// known service names. The grpc.ServiceInfo values are empty — reflection only
+// needs the names to populate the ListServices response.
+type protoServiceInfoProvider struct {
+	names []string
+}
+
+func (p *protoServiceInfoProvider) GetServiceInfo() map[string]grpc.ServiceInfo {
+	out := make(map[string]grpc.ServiceInfo, len(p.names))
+	for _, name := range p.names {
+		out[name] = grpc.ServiceInfo{}
+	}
+	return out
 }
