@@ -1,13 +1,27 @@
-# mockr
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" alt="mockr" width="220">
+  </picture>
+</p>
 
-A fast, zero-dependency-on-your-app CLI tool for developers to **mock, stub, and proxy HTTP and gRPC APIs** — written in Go.
+<p align="center">
+  A fast, zero-dependency-on-your-app CLI tool for developers to<br>
+  <strong>mock, stub, and proxy HTTP and gRPC APIs</strong> — written in Go.
+</p>
 
-Point your frontend or service at `mockr` instead of the real API. Mock only the endpoints you're actively building. Forward everything else to the real backend. Switch between response scenarios by editing a config file — changes apply instantly with no restart.
+<p align="center">
+  <a href="https://github.com/ridakaddir/mockr/actions/workflows/ci.yml"><img src="https://github.com/ridakaddir/mockr/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ridakaddir/mockr/releases"><img src="https://github.com/ridakaddir/mockr/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+  <a href="https://goreportcard.com/report/github.com/ridakaddir/mockr"><img src="https://goreportcard.com/badge/github.com/ridakaddir/mockr" alt="Go Report Card"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
-[![CI](https://github.com/ridakaddir/mockr/actions/workflows/ci.yml/badge.svg)](https://github.com/ridakaddir/mockr/actions/workflows/ci.yml)
-[![Release](https://github.com/ridakaddir/mockr/actions/workflows/release.yml/badge.svg)](https://github.com/ridakaddir/mockr/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ridakaddir/mockr)](https://goreportcard.com/report/github.com/ridakaddir/mockr)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  Point your frontend or service at <code>mockr</code> instead of the real API.<br>
+  Mock only the endpoints you're actively building. Forward everything else to the real backend.<br>
+  Switch between response scenarios by editing a config file — changes apply instantly with no restart.
+</p>
 
 ---
 
