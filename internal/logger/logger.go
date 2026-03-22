@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"google.golang.org/grpc/codes"
 )
 
 var l *log.Logger
@@ -83,6 +84,25 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// LogGRPC logs a single gRPC request in the same style as HTTP requests.
+func LogGRPC(method string, code codes.Code, latency time.Duration, source string) {
+	src := source
+	if src == "" {
+		src = "unknown"
+	}
+
+	switch {
+	case code == codes.OK:
+		l.Info(method, "code", code.String(), "latency", latency, "via", src)
+	case code == codes.NotFound || code == codes.InvalidArgument ||
+		code == codes.AlreadyExists || code == codes.PermissionDenied ||
+		code == codes.Unauthenticated || code == codes.Unimplemented:
+		l.Warn(method, "code", code.String(), "latency", latency, "via", src)
+	default:
+		l.Error(method, "code", code.String(), "latency", latency, "via", src)
+	}
 }
 
 // SetSource walks the ResponseWriter chain to find and set the source label

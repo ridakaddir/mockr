@@ -175,6 +175,7 @@ func loadDir(dir string) (*Config, error) {
 			return nil, fmt.Errorf("loading %s: %w", f, err)
 		}
 		merged.Routes = append(merged.Routes, cfg.Routes...)
+		merged.GRPCRoutes = append(merged.GRPCRoutes, cfg.GRPCRoutes...)
 	}
 
 	return merged, nil

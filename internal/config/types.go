@@ -2,7 +2,33 @@ package config
 
 // Config is the top-level structure for mockr config files (JSON/YAML/TOML).
 type Config struct {
-	Routes []Route `json:"routes" yaml:"routes" toml:"routes"`
+	Routes     []Route     `json:"routes"      yaml:"routes"      toml:"routes"`
+	GRPCRoutes []GRPCRoute `json:"grpc_routes" yaml:"grpc_routes" toml:"grpc_routes"`
+}
+
+// GRPCRoute defines a single interceptable gRPC method.
+// Match is the full gRPC method path: "/package.Service/Method".
+// Cases reuse the same Case struct; Case.Status maps to a gRPC status code
+// (0=OK, 1=CANCELLED, 2=UNKNOWN, 3=INVALID_ARGUMENT, 4=DEADLINE_EXCEEDED,
+//
+//	5=NOT_FOUND, 6=ALREADY_EXISTS, 7=PERMISSION_DENIED, 13=INTERNAL, 14=UNAVAILABLE).
+//
+// Case.File and Case.JSON hold protojson-compatible JSON (field names match the proto field names).
+type GRPCRoute struct {
+	Match       string          `json:"match"       yaml:"match"       toml:"match"`
+	Enabled     *bool           `json:"enabled"     yaml:"enabled"     toml:"enabled"`
+	Fallback    string          `json:"fallback"    yaml:"fallback"    toml:"fallback"`
+	Conditions  []Condition     `json:"conditions"  yaml:"conditions"  toml:"conditions"`
+	Cases       map[string]Case `json:"cases"       yaml:"cases"       toml:"cases"`
+	Transitions []Transition    `json:"transitions" yaml:"transitions" toml:"transitions"`
+}
+
+// IsEnabled returns true if the gRPC route is enabled (defaults to true if not set).
+func (r *GRPCRoute) IsEnabled() bool {
+	if r.Enabled == nil {
+		return true
+	}
+	return *r.Enabled
 }
 
 // Route defines a single interceptable HTTP endpoint.

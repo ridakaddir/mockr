@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	mockrgrpc "github.com/ridakaddir/mockr/internal/grpc"
 	"github.com/ridakaddir/mockr/internal/logger"
 	"github.com/ridakaddir/mockr/internal/proxy"
 	"github.com/spf13/cobra"
@@ -33,6 +34,11 @@ var (
 	apiPrefix  string
 	recordMode bool
 	initMode   bool
+
+	// gRPC flags — server only starts when --grpc-proto is provided.
+	grpcPort   int
+	grpcProtos []string
+	grpcTarget string
 )
 
 var rootCmd = &cobra.Command{
@@ -56,6 +62,11 @@ func init() {
 	rootCmd.Flags().StringVarP(&apiPrefix, "api-prefix", "a", "", "Strip this prefix from request paths before matching routes and forwarding to upstream (e.g. /api)")
 	rootCmd.Flags().BoolVar(&recordMode, "record", false, "Record mode: proxy all requests and save responses as stubs")
 	rootCmd.Flags().BoolVar(&initMode, "init", false, "Scaffold a mockr.toml template in the current directory")
+
+	// gRPC flags.
+	rootCmd.Flags().IntVar(&grpcPort, "grpc-port", 50051, "gRPC server port (only used when --grpc-proto is provided)")
+	rootCmd.Flags().StringArrayVar(&grpcProtos, "grpc-proto", nil, "Path to a .proto file; repeat for multiple files (enables the gRPC server)")
+	rootCmd.Flags().StringVar(&grpcTarget, "grpc-target", "", "Upstream gRPC server for proxy/forward mode (e.g. localhost:9090)")
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -95,6 +106,24 @@ func run(cmd *cobra.Command, args []string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	// Start the gRPC server only when --grpc-proto is provided.
+	if len(grpcProtos) > 0 {
+		grpcSrv, err := mockrgrpc.NewServer(mockrgrpc.ServerOptions{
+			ProtoFiles: grpcProtos,
+			Target:     grpcTarget,
+			Port:       grpcPort,
+			Loader:     srv.Loader(),
+		})
+		if err != nil {
+			return fmt.Errorf("starting gRPC server: %w", err)
+		}
+		go func() {
+			if err := grpcSrv.Start(ctx); err != nil {
+				logger.Error("gRPC server error", "err", err)
+			}
+		}()
+	}
 
 	return srv.Start(ctx)
 }
