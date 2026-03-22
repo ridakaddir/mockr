@@ -98,6 +98,23 @@ func (h *handler) serve(srv interface{}, stream grpc.ServerStream) error {
 			break
 		}
 
+		// Persist (stateful mutations) — handled before delay/stub-load.
+		if c.Persist {
+			grpcCode, ok := h.applyGRPCPersist(c, reqMap, start, fullMethod)
+			if ok {
+				// Always send at least an empty message — unary gRPC requires
+				// exactly one response message before closing the stream.
+				empty := []byte{}
+				if err := stream.SendMsg(&empty); err != nil {
+					return status.Errorf(codes.Internal, "send persist response: %v", err)
+				}
+				if grpcCode != codes.OK {
+					return status.Error(grpcCode, caseName)
+				}
+				return nil
+			}
+		}
+
 		if c.Delay > 0 {
 			time.Sleep(time.Duration(c.Delay) * time.Second)
 		}

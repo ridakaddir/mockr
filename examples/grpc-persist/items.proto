@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package items;
+
+option go_package = "github.com/example/items";
+
+// ItemService manages a list of items backed by a stub file.
+// All write operations mutate stubs/items.json on disk — subsequent reads reflect the change.
+service ItemService {
+  rpc ListItems  (ListItemsRequest)  returns (ListItemsResponse);
+  rpc CreateItem (CreateItemRequest) returns (CreateItemResponse);
+  rpc UpdateItem (UpdateItemRequest) returns (UpdateItemResponse);
+  rpc DeleteItem (DeleteItemRequest) returns (DeleteItemResponse);
+}
+
+message ListItemsRequest {}
+
+message ListItemsResponse {
+  repeated Item items = 1;
+}
+
+message Item {
+  string item_id  = 1;
+  string name     = 2;
+  string status   = 3;
+  int32  quantity = 4;
+}
+
+message CreateItemRequest {
+  string item_id  = 1;
+  string name     = 2;
+  string status   = 3;
+  int32  quantity = 4;
+}
+
+message CreateItemResponse {
+  Item item = 1;
+}
+
+message UpdateItemRequest {
+  string item_id  = 1;
+  string name     = 2;
+  string status   = 3;
+  int32  quantity = 4;
+}
+
+message UpdateItemResponse {
+  Item item = 1;
+}
+
+message DeleteItemRequest {
+  string item_id = 1;
+}
+
+message DeleteItemResponse {
+  bool success = 1;
+}

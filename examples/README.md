@@ -56,8 +56,13 @@ examples/
 │   ├── mockr.toml
 │   └── stubs/
 │
-└── grpc-proxy/               # gRPC — selective mock + transparent proxy fallthrough
-    ├── products.proto
+├── grpc-proxy/               # gRPC — selective mock + transparent proxy fallthrough
+│   ├── products.proto
+│   ├── mockr.toml
+│   └── stubs/
+│
+└── grpc-persist/             # gRPC — stateful CRUD backed by a stub file
+    ├── items.proto
     ├── mockr.toml
     └── stubs/
 ```
@@ -457,6 +462,49 @@ grpcurl -plaintext \
 grpcurl -plaintext localhost:50051 list
 grpcurl -plaintext localhost:50051 describe products.ProductService
 ```
+
+---
+
+## grpc-persist
+
+Stateful gRPC CRUD backed by `stubs/items.json`. All write operations mutate the file on disk — subsequent reads reflect the change immediately.
+
+```sh
+mockr --config examples/grpc-persist \
+      --grpc-proto examples/grpc-persist/items.proto
+```
+
+```sh
+# List all items (reads stubs/items.json)
+grpcurl -plaintext -d '{}' localhost:50051 items.ItemService/ListItems
+
+# Create a new item (appended to the items array)
+grpcurl -plaintext \
+  -d '{"item_id":"item_004","name":"Widget D","status":"active","quantity":20}' \
+  localhost:50051 items.ItemService/CreateItem
+
+# Update an item (merges fields into the matching record by itemId)
+grpcurl -plaintext \
+  -d '{"item_id":"item_002","name":"Widget B Pro","status":"active","quantity":99}' \
+  localhost:50051 items.ItemService/UpdateItem
+
+# Delete an item (removes the record from the array)
+grpcurl -plaintext \
+  -d '{"item_id":"item_003"}' \
+  localhost:50051 items.ItemService/DeleteItem
+
+# Confirm changes persisted
+grpcurl -plaintext -d '{}' localhost:50051 items.ItemService/ListItems
+
+# Delete a non-existent item → NOT_FOUND (gRPC code 5)
+grpcurl -plaintext \
+  -d '{"item_id":"item_999"}' \
+  localhost:50051 items.ItemService/DeleteItem
+```
+
+Reset: `git checkout examples/grpc-persist/stubs/items.json`
+
+**How it works:** the `key` field in each case config names the field in the **stored** record to match on (e.g. `key = "itemId"`). The key *value* is extracted from the incoming request body using the same snake_case → camelCase lookup as conditions, so `item_id` in the request matches `itemId` in the stub file.
 
 ---
 

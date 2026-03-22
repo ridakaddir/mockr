@@ -30,6 +30,7 @@ Point your frontend or service at `mockr` instead of the real API. Mock only the
 - **gRPC mock** — mock unary gRPC methods from `.proto` files; stub responses with protojson; no `protoc` or codegen required
 - **gRPC proxy** — forward unmatched gRPC methods transparently to an upstream server (h2c)
 - **gRPC conditions** — route gRPC calls to different cases based on request body fields, using the same condition operators as REST
+- **gRPC persist** — stateful CRUD: `append` / `replace` / `delete` mutations on stub JSON files, same as REST persist
 - **gRPC generate** — `mockr generate --proto` scaffolds `[[grpc_routes]]` config and stub JSON files from a `.proto` file
 - **gRPC reflection** — built-in server reflection so `grpcurl` and `grpc-ui` work out of the box
 
@@ -408,6 +409,65 @@ enabled = true
 
 # UpdateProduct is not defined at all — always proxied to --grpc-target
 ```
+
+#### Stateful persist
+
+gRPC routes support the same `persist` / `merge` / `key` / `array_key` fields as REST cases. The stub file is mutated on disk and subsequent reads reflect the change.
+
+```toml
+# Append incoming request body as a new record
+[[grpc_routes]]
+match    = "/items.ItemService/CreateItem"
+enabled  = true
+fallback = "created"
+
+  [grpc_routes.cases.created]
+  status    = 0
+  file      = "stubs/items.json"
+  persist   = true
+  merge     = "append"
+  array_key = "items"
+
+# Replace the record matching key = "itemId" with the incoming body
+[[grpc_routes]]
+match    = "/items.ItemService/UpdateItem"
+enabled  = true
+fallback = "updated"
+
+  [grpc_routes.cases.updated]
+  status    = 0
+  file      = "stubs/items.json"
+  persist   = true
+  merge     = "replace"
+  key       = "itemId"
+  array_key = "items"
+
+# Delete the record matching key = "itemId"
+[[grpc_routes]]
+match    = "/items.ItemService/DeleteItem"
+enabled  = true
+fallback = "deleted"
+
+  [grpc_routes.cases.deleted]
+  status    = 0
+  file      = "stubs/items.json"
+  persist   = true
+  merge     = "delete"
+  key       = "itemId"
+  array_key = "items"
+```
+
+**Key resolution:** for `replace` and `delete`, the key value is extracted from the incoming request body. Both snake_case (`item_id`) and camelCase (`itemId`) field names in the request are matched against `key` automatically.
+
+**Error codes:**
+
+| Situation | gRPC code |
+|---|---|
+| Record not found | `5` NOT_FOUND |
+| Key field missing from request | `3` INVALID_ARGUMENT |
+| Stub file unreadable / parse error | `13` INTERNAL |
+
+**Response body:** `append` and `replace` return the affected record encoded as proto. `delete` returns an empty response with code `0` OK.
 
 #### Transitions
 
@@ -978,6 +1038,7 @@ mockr --config examples/<name>
 | `examples/grpc-mock` | gRPC unary mock — named cases, error codes, template tokens |
 | `examples/grpc-conditions` | gRPC condition routing on request body fields |
 | `examples/grpc-proxy` | gRPC selective mock + transparent upstream proxy fallthrough |
+| `examples/grpc-persist` | gRPC stateful CRUD — append / replace / delete backed by a stub file |
 
 **HTTP examples:** run with `mockr --config examples/<name>`
 

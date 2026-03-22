@@ -72,6 +72,11 @@ tasks:
     cmds:
       - go run . --config examples/grpc-proxy --grpc-proto examples/grpc-proxy/products.proto {{if .GRPC_TARGET}}--grpc-target {{.GRPC_TARGET}}{{end}}
 
+  run:grpc-persist:
+    desc: Run gRPC persist example (ItemService stateful CRUD on port 50051)
+    cmds:
+      - go run . --config examples/grpc-persist --grpc-proto examples/grpc-persist/items.proto
+
   # ── Test ───────────────────────────────────────────────────────────────────
 
   test:
