@@ -1,0 +1,76 @@
+# gRPC proxy + selective mock
+#
+# Demonstrates how to mix mocked gRPC methods with transparent proxy forwarding:
+#   - GetProduct  → always served from a local stub (no upstream needed)
+#   - ListProducts → served from stub only for "electronics" category; all other
+#                    categories are forwarded to the upstream gRPC server
+#   - UpdateProduct → always forwarded to the upstream (no mock defined)
+#
+# Run (mock-only, no upstream):
+#   mockr --config examples/grpc-proxy \
+#         --grpc-proto examples/grpc-proxy/products.proto
+#
+# Run (with upstream proxy for unmatched methods):
+#   mockr --config examples/grpc-proxy \
+#         --grpc-proto examples/grpc-proxy/products.proto \
+#         --grpc-target localhost:9090
+#
+# Try (requires grpcurl):
+#
+#   # GetProduct — always stubbed
+#   grpcurl -plaintext -d '{"product_id":"prod_001"}' \
+#     localhost:50051 products.ProductService/GetProduct
+#
+#   # ListProducts — stubbed for electronics, proxied for other categories
+#   grpcurl -plaintext -d '{"category":"electronics","limit":5}' \
+#     localhost:50051 products.ProductService/ListProducts
+#
+#   grpcurl -plaintext -d '{"category":"clothing","limit":5}' \
+#     localhost:50051 products.ProductService/ListProducts
+#
+#   # UpdateProduct — no mock defined → forwarded to --grpc-target (or UNIMPLEMENTED)
+#   grpcurl -plaintext -d '{"product_id":"prod_001","price":29.99,"stock":100}' \
+#     localhost:50051 products.ProductService/UpdateProduct
+#
+#   # Inspect available services (gRPC reflection, always on):
+#   grpcurl -plaintext localhost:50051 list
+#   grpcurl -plaintext localhost:50051 describe products.ProductService
+
+# ─── GetProduct ───────────────────────────────────────────────────────────────
+# Always mocked — upstream never called regardless of --grpc-target.
+
+[[grpc_routes]]
+match    = "/products.ProductService/GetProduct"
+enabled  = true
+fallback = "ok"
+
+  [grpc_routes.cases.ok]
+  status = 0
+  file   = "stubs/product.json"
+
+  [grpc_routes.cases.not_found]
+  status = 5  # gRPC NOT_FOUND
+  json   = '{"message": "product not found"}'
+
+# ─── ListProducts ─────────────────────────────────────────────────────────────
+# Mocked for the "electronics" category only.
+# Any other category has no condition match and no fallback → proxied upstream.
+
+[[grpc_routes]]
+match   = "/products.ProductService/ListProducts"
+enabled = true
+# No fallback — unmatched conditions fall through to upstream proxy.
+
+  [[grpc_routes.conditions]]
+  source = "body"
+  field  = "category"
+  op     = "eq"
+  value  = "electronics"
+  case   = "electronics"
+
+  [grpc_routes.cases.electronics]
+  status = 0
+  file   = "stubs/products_electronics.json"
+
+# UpdateProduct is intentionally not defined here — all calls are forwarded
+# to --grpc-target if set, or return UNIMPLEMENTED if not.

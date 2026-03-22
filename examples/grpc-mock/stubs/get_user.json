@@ -1,0 +1,7 @@
+{
+  "userId": "usr_1a2b3c4d",
+  "name": "Alice Smith",
+  "email": "alice@example.com",
+  "active": true,
+  "role": "admin"
+}

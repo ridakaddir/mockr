@@ -43,8 +43,23 @@ examples/
 ├── record-mode/              # Proxy + auto-record workflow
 │   └── mockr.toml
 │
-└── openapi-generate/         # Generate config from an OpenAPI spec
-    └── README.md             # Instructions (generated files not committed)
+├── openapi-generate/         # Generate config from an OpenAPI spec
+│   └── README.md             # Instructions (generated files not committed)
+│
+├── grpc-mock/                # gRPC — basic unary mock (UserService)
+│   ├── users.proto           # Proto definition
+│   ├── mockr.toml            # [[grpc_routes]] with named cases
+│   └── stubs/
+│
+├── grpc-conditions/          # gRPC — condition routing on request body fields
+│   ├── orders.proto
+│   ├── mockr.toml
+│   └── stubs/
+│
+└── grpc-proxy/               # gRPC — selective mock + transparent proxy fallthrough
+    ├── products.proto
+    ├── mockr.toml
+    └── stubs/
 ```
 
 ---
@@ -271,6 +286,176 @@ After recording, serve fully offline (no `--target`, no `--record`):
 
 ```sh
 mockr --config examples/record-mode --api-prefix /api
+```
+
+---
+
+---
+
+## grpc-mock
+
+Basic gRPC mocking with named cases, error codes, and template tokens. No upstream server needed. Requires `--grpc-proto` to activate the gRPC server.
+
+> **Prerequisites:** install [grpcurl](https://github.com/fullstorydev/grpcurl) to send gRPC calls from the terminal.
+
+```sh
+mockr --config examples/grpc-mock \
+      --grpc-proto examples/grpc-mock/users.proto
+```
+
+**GetUser:**
+
+```sh
+# Success (stub file)
+grpcurl -plaintext -d '{"user_id":"1"}' \
+  localhost:50051 users.UserService/GetUser
+
+# Switch to not_found: edit mockr.toml and change fallback = "not_found"
+grpcurl -plaintext -d '{"user_id":"999"}' \
+  localhost:50051 users.UserService/GetUser
+
+# Switch to error with delay: change fallback = "error"
+grpcurl -plaintext -d '{"user_id":"1"}' \
+  localhost:50051 users.UserService/GetUser
+```
+
+**ListUsers:**
+
+```sh
+grpcurl -plaintext -d '{"page":1,"page_size":10}' \
+  localhost:50051 users.UserService/ListUsers
+
+# Empty list: change fallback = "empty" in mockr.toml
+```
+
+**CreateUser (template tokens — {{uuid}} rendered on every call):**
+
+```sh
+grpcurl -plaintext \
+  -d '{"name":"Diana","email":"diana@example.com","role":"member"}' \
+  localhost:50051 users.UserService/CreateUser
+
+# Conflict: change fallback = "already_exists"
+```
+
+**Inspect registered services (gRPC reflection is always on):**
+
+```sh
+grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext localhost:50051 describe users.UserService
+```
+
+---
+
+## grpc-conditions
+
+Condition-based routing on decoded protobuf request body fields. Same `source / field / op / value` config as REST, applied to the protojson representation of the incoming message.
+
+```sh
+mockr --config examples/grpc-conditions \
+      --grpc-proto examples/grpc-conditions/orders.proto
+```
+
+**GetOrder — route by `region` field:**
+
+```sh
+# EU region → localised stub
+grpcurl -plaintext -d '{"order_id":"o999","region":"eu"}' \
+  localhost:50051 orders.OrderService/GetOrder
+
+# US region → localised stub
+grpcurl -plaintext -d '{"order_id":"o999","region":"us"}' \
+  localhost:50051 orders.OrderService/GetOrder
+
+# No region → default fallback
+grpcurl -plaintext -d '{"order_id":"o999"}' \
+  localhost:50051 orders.OrderService/GetOrder
+```
+
+**PlaceOrder — route by `payment_type`:**
+
+```sh
+# Card payment → accepted (code 0 OK)
+grpcurl -plaintext \
+  -d '{"user_id":"u1","payment_type":"card","amount":99}' \
+  localhost:50051 orders.OrderService/PlaceOrder
+
+# Crypto payment → pending review + 1s delay
+grpcurl -plaintext \
+  -d '{"user_id":"u1","payment_type":"crypto","amount":500}' \
+  localhost:50051 orders.OrderService/PlaceOrder
+```
+
+**CancelOrder — route by `contains` operator on reason string:**
+
+```sh
+# Contains "duplicate" → instant cancel
+grpcurl -plaintext \
+  -d '{"order_id":"o999","reason":"duplicate order placed"}' \
+  localhost:50051 orders.OrderService/CancelOrder
+
+# Missing reason → INVALID_ARGUMENT (code 3)
+grpcurl -plaintext \
+  -d '{"order_id":"o999"}' \
+  localhost:50051 orders.OrderService/CancelOrder
+
+# Change fallback = "too_late" to simulate already-shipped scenario (code 9)
+grpcurl -plaintext \
+  -d '{"order_id":"o999","reason":"changed mind"}' \
+  localhost:50051 orders.OrderService/CancelOrder
+```
+
+---
+
+## grpc-proxy
+
+Demonstrates selective mocking with transparent proxy fallthrough:
+
+- **GetProduct** — always served from a local stub
+- **ListProducts** — stubbed for `category=electronics`; any other category falls through to `--grpc-target`
+- **UpdateProduct** — not mocked at all; always forwarded to `--grpc-target` (or `UNIMPLEMENTED` if no target)
+
+**Mock-only mode (no upstream):**
+
+```sh
+mockr --config examples/grpc-proxy \
+      --grpc-proto examples/grpc-proxy/products.proto
+
+# Stubbed — returns local file
+grpcurl -plaintext -d '{"product_id":"prod_001"}' \
+  localhost:50051 products.ProductService/GetProduct
+
+# Stubbed (category=electronics matches condition)
+grpcurl -plaintext -d '{"category":"electronics","limit":5}' \
+  localhost:50051 products.ProductService/ListProducts
+
+# No mock → UNIMPLEMENTED (no target configured)
+grpcurl -plaintext -d '{"category":"clothing","limit":5}' \
+  localhost:50051 products.ProductService/ListProducts
+```
+
+**With upstream proxy:**
+
+```sh
+mockr --config examples/grpc-proxy \
+      --grpc-proto examples/grpc-proxy/products.proto \
+      --grpc-target localhost:9090
+
+# Forwarded to real upstream (clothing category — not mocked)
+grpcurl -plaintext -d '{"category":"clothing","limit":5}' \
+  localhost:50051 products.ProductService/ListProducts
+
+# Forwarded — no mock for UpdateProduct
+grpcurl -plaintext \
+  -d '{"product_id":"prod_001","price":29.99,"stock":100}' \
+  localhost:50051 products.ProductService/UpdateProduct
+```
+
+**Inspect services:**
+
+```sh
+grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext localhost:50051 describe products.ProductService
 ```
 
 ---

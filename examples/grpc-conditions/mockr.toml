@@ -1,0 +1,143 @@
+# gRPC mock — condition-based routing
+#
+# Conditions evaluate fields from the protojson-decoded request body using the
+# same operators as REST (eq | neq | contains | regex | exists | not_exists).
+# The first matching condition wins; fallback is used when none match.
+#
+# Run:
+#   mockr --config examples/grpc-conditions \
+#         --grpc-proto examples/grpc-conditions/orders.proto
+#
+# Try (requires grpcurl):
+#
+#   # GetOrder — route by region
+#   grpcurl -plaintext -d '{"order_id":"o999","region":"eu"}' \
+#     localhost:50051 orders.OrderService/GetOrder
+#
+#   grpcurl -plaintext -d '{"order_id":"o999","region":"us"}' \
+#     localhost:50051 orders.OrderService/GetOrder
+#
+#   grpcurl -plaintext -d '{"order_id":"o999"}' \
+#     localhost:50051 orders.OrderService/GetOrder
+#
+#   # PlaceOrder — route by payment_type
+#   grpcurl -plaintext -d '{"user_id":"u1","payment_type":"crypto","amount":500}' \
+#     localhost:50051 orders.OrderService/PlaceOrder
+#
+#   grpcurl -plaintext -d '{"user_id":"u1","payment_type":"invoice","amount":10000}' \
+#     localhost:50051 orders.OrderService/PlaceOrder
+#
+#   grpcurl -plaintext -d '{"user_id":"u1","payment_type":"card","amount":99}' \
+#     localhost:50051 orders.OrderService/PlaceOrder
+#
+#   # CancelOrder — route by reason content
+#   grpcurl -plaintext -d '{"order_id":"o999","reason":"duplicate order placed"}' \
+#     localhost:50051 orders.OrderService/CancelOrder
+#
+#   grpcurl -plaintext -d '{"order_id":"o999","reason":"changed mind"}' \
+#     localhost:50051 orders.OrderService/CancelOrder
+
+# ─── GetOrder ─────────────────────────────────────────────────────────────────
+
+[[grpc_routes]]
+match    = "/orders.OrderService/GetOrder"
+enabled  = true
+fallback = "ok"
+
+  # EU region → localised response
+  [[grpc_routes.conditions]]
+  source = "body"
+  field  = "region"
+  op     = "eq"
+  value  = "eu"
+  case   = "eu"
+
+  # US region → localised response
+  [[grpc_routes.conditions]]
+  source = "body"
+  field  = "region"
+  op     = "eq"
+  value  = "us"
+  case   = "us"
+
+  [grpc_routes.cases.ok]
+  status = 0
+  file   = "stubs/order_default.json"
+
+  [grpc_routes.cases.eu]
+  status = 0
+  file   = "stubs/order_eu.json"
+
+  [grpc_routes.cases.us]
+  status = 0
+  file   = "stubs/order_us.json"
+
+# ─── PlaceOrder ───────────────────────────────────────────────────────────────
+
+[[grpc_routes]]
+match    = "/orders.OrderService/PlaceOrder"
+enabled  = true
+fallback = "accepted"
+
+  # Crypto payments → manual review required
+  [[grpc_routes.conditions]]
+  source = "body"
+  field  = "payment_type"
+  op     = "eq"
+  value  = "crypto"
+  case   = "pending_review"
+
+  # Invoice payments → only for high-value orders
+  [[grpc_routes.conditions]]
+  source = "body"
+  field  = "payment_type"
+  op     = "eq"
+  value  = "invoice"
+  case   = "accepted"
+
+  [grpc_routes.cases.accepted]
+  status = 0
+  json   = '{"orderId": "{{uuid}}", "status": "accepted", "message": "Order confirmed"}'
+
+  [grpc_routes.cases.pending_review]
+  status = 0
+  json   = '{"orderId": "{{uuid}}", "status": "pending_review", "message": "Crypto payment requires manual review. Allow 1-2 business days."}'
+  delay  = 1
+
+  [grpc_routes.cases.declined]
+  status = 9  # gRPC FAILED_PRECONDITION
+  json   = '{"message": "Payment declined"}'
+
+# ─── CancelOrder ──────────────────────────────────────────────────────────────
+
+[[grpc_routes]]
+match    = "/orders.OrderService/CancelOrder"
+enabled  = true
+fallback = "cancelled"
+
+  # Duplicate-related reasons → instant cancellation
+  [[grpc_routes.conditions]]
+  source = "body"
+  field  = "reason"
+  op     = "contains"
+  value  = "duplicate"
+  case   = "cancelled"
+
+  # Missing reason → bad request
+  [[grpc_routes.conditions]]
+  source = "body"
+  field  = "reason"
+  op     = "not_exists"
+  case   = "bad_request"
+
+  [grpc_routes.cases.cancelled]
+  status = 0
+  json   = '{"cancelled": true, "message": "Order successfully cancelled"}'
+
+  [grpc_routes.cases.bad_request]
+  status = 3  # gRPC INVALID_ARGUMENT
+  json   = '{"message": "reason is required to cancel an order"}'
+
+  [grpc_routes.cases.too_late]
+  status = 9  # gRPC FAILED_PRECONDITION
+  json   = '{"cancelled": false, "message": "Order already shipped — cannot cancel"}'

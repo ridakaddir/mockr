@@ -1,0 +1,26 @@
+{
+  "users": [
+    {
+      "userId": "usr_1a2b3c4d",
+      "name": "Alice Smith",
+      "email": "alice@example.com",
+      "active": true,
+      "role": "admin"
+    },
+    {
+      "userId": "usr_2b3c4d5e",
+      "name": "Bob Jones",
+      "email": "bob@example.com",
+      "active": true,
+      "role": "member"
+    },
+    {
+      "userId": "usr_3c4d5e6f",
+      "name": "Carol White",
+      "email": "carol@example.com",
+      "active": false,
+      "role": "member"
+    }
+  ],
+  "total": 3
+}
