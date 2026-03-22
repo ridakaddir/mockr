@@ -57,6 +57,21 @@ tasks:
     requires:
       vars: [TARGET]
 
+  run:grpc-mock:
+    desc: Run gRPC basic mock example (UserService on port 50051)
+    cmds:
+      - go run . --config examples/grpc-mock --grpc-proto examples/grpc-mock/users.proto
+
+  run:grpc-conditions:
+    desc: Run gRPC conditions example (OrderService on port 50051)
+    cmds:
+      - go run . --config examples/grpc-conditions --grpc-proto examples/grpc-conditions/orders.proto
+
+  run:grpc-proxy:
+    desc: "Run gRPC proxy example (ProductService; set GRPC_TARGET to forward unmatched methods)"
+    cmds:
+      - go run . --config examples/grpc-proxy --grpc-proto examples/grpc-proxy/products.proto {{if .GRPC_TARGET}}--grpc-target {{.GRPC_TARGET}}{{end}}
+
   # ── Test ───────────────────────────────────────────────────────────────────
 
   test:
@@ -117,7 +132,7 @@ tasks:
       - go get -u ./...
       - go mod tidy
 
-  # ── OpenAPI ────────────────────────────────────────────────────────────────
+  # ── Generate ───────────────────────────────────────────────────────────────
 
   generate:
     desc: "Generate mockr config from an OpenAPI spec (SPEC=<file|url> OUT=./mocks)"
@@ -130,6 +145,18 @@ tasks:
     desc: Generate from the OpenAPI Petstore v3 (quick smoke test)
     cmds:
       - go run . generate --spec https://petstore3.swagger.io/api/v3/openapi.json --out /tmp/petstore-mocks
+
+  generate:proto:
+    desc: "Generate mockr config from a .proto file (PROTO=<file> OUT=./mocks)"
+    cmds:
+      - go run . generate --proto {{.PROTO}} --out {{.OUT | default "mocks"}} {{.CLI_ARGS}}
+    requires:
+      vars: [PROTO]
+
+  generate:proto:example:
+    desc: Regenerate the grpc-mock example config from its proto (smoke test)
+    cmds:
+      - go run . generate --proto examples/grpc-mock/users.proto --out /tmp/grpc-mock-gen
 
   # ── Release ────────────────────────────────────────────────────────────────
 
