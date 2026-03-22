@@ -7,10 +7,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func init() {
-	// Override the default "proto" codec with our raw-bytes passthrough.
-	// gRPC calls Marshal/Unmarshal around every message; by treating *[]byte
-	// as already-serialised wire bytes we can relay frames without a schema.
+// InstallCodec replaces the global gRPC "proto" codec with the raw-bytes
+// passthrough implementation. Must be called before the gRPC server starts.
+// It is called explicitly from NewServer so it only affects processes that
+// actually start a gRPC server (HTTP-only runs are unaffected).
+func InstallCodec() {
 	encoding.RegisterCodec(rawCodec{})
 }
 

@@ -4,6 +4,7 @@ package persist
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -108,15 +109,15 @@ func WriteStub(filePath string, root map[string]interface{}) error {
 // getArray returns the []interface{} at root[arrayKey].
 func getArray(root map[string]interface{}, arrayKey string) ([]interface{}, error) {
 	if arrayKey == "" {
-		return nil, fmt.Errorf("array_key is required for persist operations")
+		return nil, &ConfigError{Msg: "array_key is required for persist operations"}
 	}
 	raw, exists := root[arrayKey]
 	if !exists {
-		return nil, fmt.Errorf("array_key %q not found in stub file", arrayKey)
+		return nil, &ConfigError{Msg: fmt.Sprintf("array_key %q not found in stub file", arrayKey)}
 	}
 	arr, ok := raw.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("array_key %q is not a JSON array", arrayKey)
+		return nil, &ConfigError{Msg: fmt.Sprintf("array_key %q is not a JSON array", arrayKey)}
 	}
 	return arr, nil
 }
@@ -131,8 +132,22 @@ func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("record not found: %s=%s", e.Key, e.Value)
 }
 
-// IsNotFound reports whether err is a *NotFoundError.
+// IsNotFound reports whether err (or any error in its chain) is a *NotFoundError.
 func IsNotFound(err error) bool {
-	_, ok := err.(*NotFoundError)
-	return ok
+	var t *NotFoundError
+	return errors.As(err, &t)
+}
+
+// ConfigError is returned for invalid persist configuration (e.g. missing or
+// invalid array_key). Maps to HTTP 400 / gRPC INVALID_ARGUMENT.
+type ConfigError struct {
+	Msg string
+}
+
+func (e *ConfigError) Error() string { return e.Msg }
+
+// IsConfigError reports whether err (or any error in its chain) is a *ConfigError.
+func IsConfigError(err error) bool {
+	var t *ConfigError
+	return errors.As(err, &t)
 }

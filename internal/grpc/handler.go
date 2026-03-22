@@ -70,10 +70,21 @@ func (h *handler) serve(srv interface{}, stream grpc.ServerStream) error {
 		return status.Errorf(codes.Internal, "registry lookup: %v", err)
 	}
 
+	// Guard against streaming RPCs — only unary is supported.
+	if md != nil && (md.IsClientStreaming() || md.IsServerStreaming()) {
+		return status.Errorf(codes.Unimplemented,
+			"mockr does not yet support streaming RPCs (%s)", fullMethod)
+	}
+
 	// Decode request to a map for condition evaluation.
 	var reqMap map[string]interface{}
 	if md != nil && len(rawReq) > 0 {
-		reqMap, _ = h.registry.DecodeRequest(md, rawReq)
+		var decodeErr error
+		reqMap, decodeErr = h.registry.DecodeRequest(md, rawReq)
+		if decodeErr != nil {
+			logger.Warn("grpc decode request failed — conditions will use empty body",
+				"err", decodeErr, "method", fullMethod)
+		}
 	}
 
 	// Match a gRPC route.
@@ -85,6 +96,17 @@ func (h *handler) serve(srv interface{}, stream grpc.ServerStream) error {
 		}
 		if !grpcMatchPath(route.Match, fullMethod) {
 			continue
+		}
+
+		// Require a valid method descriptor to transcode request/response.
+		// Without one we cannot decode conditions or encode the stub response.
+		if md == nil {
+			logger.Warn("grpc method not in proto registry — cannot transcode",
+				"method", fullMethod)
+			logger.LogGRPC(fullMethod, codes.Unimplemented, time.Since(start), logger.SourceStub)
+			return status.Errorf(codes.Unimplemented,
+				"method %s matched a [[grpc_routes]] entry but is not present in any loaded --grpc-proto file",
+				fullMethod)
 		}
 
 		caseName := h.resolveCase(route, reqMap)
@@ -124,17 +146,17 @@ func (h *handler) serve(srv interface{}, stream grpc.ServerStream) error {
 		if err != nil {
 			logger.Error("grpc load stub", "err", err, "method", fullMethod)
 			logger.LogGRPC(fullMethod, codes.Internal, time.Since(start), logger.SourceStub)
-			return status.Errorf(codes.Internal, "load stub: %v", err)
+			return status.Error(codes.Internal, "internal error loading stub response")
 		}
 
 		// Encode to proto wire bytes.
 		var wireResp []byte
-		if md != nil && len(jsonBody) > 0 && string(jsonBody) != "{}" {
+		if len(jsonBody) > 0 && string(jsonBody) != "{}" {
 			wireResp, err = h.registry.EncodeResponse(md, jsonBody)
 			if err != nil {
 				logger.Error("grpc encode response", "err", err, "method", fullMethod)
 				logger.LogGRPC(fullMethod, codes.Internal, time.Since(start), logger.SourceStub)
-				return status.Errorf(codes.Internal, "encode response: %v", err)
+				return status.Error(codes.Internal, "internal error encoding stub response")
 			}
 		}
 
@@ -154,8 +176,17 @@ func (h *handler) serve(srv interface{}, stream grpc.ServerStream) error {
 
 	// No mock matched — forward to upstream if configured.
 	if h.target != "" {
-		logger.LogGRPC(fullMethod, codes.OK, time.Since(start), logger.SourceProxy)
-		return forwardGRPC(stream, h.target, fullMethod, rawReq)
+		fwdErr := forwardGRPC(stream, h.target, fullMethod, rawReq)
+		proxyCode := codes.OK
+		if fwdErr != nil {
+			if st, ok := status.FromError(fwdErr); ok {
+				proxyCode = st.Code()
+			} else {
+				proxyCode = codes.Internal
+			}
+		}
+		logger.LogGRPC(fullMethod, proxyCode, time.Since(start), logger.SourceProxy)
+		return fwdErr
 	}
 
 	logger.LogGRPC(fullMethod, codes.Unimplemented, time.Since(start), logger.SourceStub)

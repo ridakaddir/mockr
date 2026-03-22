@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ridakaddir/mockr/internal/generate"
 	"github.com/spf13/cobra"
@@ -100,7 +101,7 @@ func runGenerateProto() error {
 		Format:      genFormat,
 	}
 
-	fmt.Printf("Loading proto files: %s\n", genProtos)
+	fmt.Printf("Loading proto files: %s\n", strings.Join(genProtos, ", "))
 
 	result, err := generate.RunProto(opts)
 	if err != nil {

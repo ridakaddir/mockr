@@ -28,7 +28,11 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 	case "append":
 		if err := persist.Append(filePath, c.ArrayKey, incoming); err != nil {
 			logger.Error("persist append", "file", filePath, "err", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			if persist.IsConfigError(err) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "stub file error"})
+			}
 			return true
 		}
 		logger.SetSource(w, logger.SourceStub)

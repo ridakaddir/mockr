@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ridakaddir/mockr/internal/config"
 	mockrgrpc "github.com/ridakaddir/mockr/internal/grpc"
 	"github.com/ridakaddir/mockr/internal/logger"
 	"github.com/ridakaddir/mockr/internal/proxy"
@@ -118,6 +119,10 @@ func run(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("starting gRPC server: %w", err)
 		}
+		// Wire config hot-reload so gRPC transitions reset alongside HTTP ones.
+		srv.Loader().AddOnChange(func(_ *config.Config) {
+			grpcSrv.NotifyReload()
+		})
 		go func() {
 			if err := grpcSrv.Start(ctx); err != nil {
 				logger.Error("gRPC server error", "err", err)

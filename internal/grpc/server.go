@@ -42,6 +42,10 @@ type Server struct {
 // NewServer initialises the gRPC server: parses proto files, wires the handler,
 // and creates the underlying grpc.Server. Call Start to begin accepting connections.
 func NewServer(opts ServerOptions) (*Server, error) {
+	// Install the raw-bytes codec here, not in an init(), so HTTP-only runs
+	// are unaffected by the global gRPC codec override.
+	InstallCodec()
+
 	registry, err := NewRegistry(opts.ProtoFiles, opts.ImportPaths)
 	if err != nil {
 		return nil, fmt.Errorf("building proto registry: %w", err)
