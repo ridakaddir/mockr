@@ -37,6 +37,9 @@ examples/
 │   ├── posts-write.toml      # POST/PUT/PATCH/DELETE — persist + conditions
 │   └── stubs/
 │
+├── transitions/              # Time-based response transitions
+│   └── orders.toml           # GET /orders/* — shipped → out_for_delivery → delivered
+│
 ├── record-mode/              # Proxy + auto-record workflow
 │   └── mockr.toml
 │
@@ -210,6 +213,39 @@ http :4000/user/johndoe                          # 200 — user profile
 ```
 
 The generated `mocks/` directory is gitignored — regenerate it any time. See [`openapi-generate/README.md`](openapi-generate/README.md) for the full workflow including format options and hot-reload tips.
+
+---
+
+## transitions
+
+Simulates an order lifecycle that automatically advances through states over time — no config changes or restarts needed.
+
+```sh
+mockr --config examples/transitions
+```
+
+```sh
+# Hit the same endpoint and watch the status change as time passes
+http :4000/orders/o123    # t=0s  → shipped
+# wait 30 seconds
+http :4000/orders/o123    # t=30s → out_for_delivery
+# wait 60 more seconds
+http :4000/orders/o123    # t=90s → delivered (stays here)
+```
+
+**Watch it change automatically:**
+
+```sh
+watch -n 5 'http :4000/orders/o123'
+```
+
+**Reset the timeline** by triggering a hot reload:
+
+```sh
+touch examples/transitions/orders.toml
+```
+
+The timer restarts from the next request.
 
 ---
 

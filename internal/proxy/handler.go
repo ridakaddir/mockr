@@ -11,10 +11,11 @@ import (
 
 // Handler holds runtime state for the request dispatcher.
 type Handler struct {
-	loader    configLoader
-	rp        *httputil.ReverseProxy // nil if no --target
-	rec       responseRecorder       // non-nil in record mode, created once
-	apiPrefix string                 // stripped from request path before matching + forwarding
+	loader      configLoader
+	rp          *httputil.ReverseProxy // nil if no --target
+	rec         responseRecorder       // non-nil in record mode, created once
+	apiPrefix   string                 // stripped from request path before matching + forwarding
+	transitions *transitionState       // time-based transition state
 }
 
 // configLoader abstracts config.Loader so it can be mocked in tests.
@@ -24,9 +25,14 @@ type configLoader interface {
 	ConfigDir() string
 }
 
-// NewHandler builds a new Handler.
-// configPath is only used by record mode to know where to write new stubs/routes.
+// NewHandler builds a new Handler with a fresh transition state.
 func NewHandler(loader configLoader, rp *httputil.ReverseProxy, recordMode bool, apiPrefix string) *Handler {
+	return NewHandlerWithTransitions(loader, rp, recordMode, apiPrefix, newTransitionState())
+}
+
+// NewHandlerWithTransitions builds a Handler with the provided transition state.
+// Used by NewServer to share the transition state with the config reload callback.
+func NewHandlerWithTransitions(loader configLoader, rp *httputil.ReverseProxy, recordMode bool, apiPrefix string, ts *transitionState) *Handler {
 	// Normalise prefix: ensure it starts with / and has no trailing slash.
 	if apiPrefix != "" && !strings.HasPrefix(apiPrefix, "/") {
 		apiPrefix = "/" + apiPrefix
@@ -41,10 +47,11 @@ func NewHandler(loader configLoader, rp *httputil.ReverseProxy, recordMode bool,
 	}
 
 	return &Handler{
-		loader:    loader,
-		rp:        rp,
-		rec:       rec,
-		apiPrefix: apiPrefix,
+		loader:      loader,
+		rp:          rp,
+		rec:         rec,
+		apiPrefix:   apiPrefix,
+		transitions: ts,
 	}
 }
 
@@ -141,14 +148,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	forwardRequest(w, r, h.rp, bodyBytes, h.rec)
 }
 
-// resolveCase walks conditions top-to-bottom; first match returns its case name.
-// Falls back to route.Fallback if no condition matches.
+// resolveCase determines which case to serve for a matched route.
+// Priority order:
+//  1. Conditions — first matching condition wins
+//  2. Transitions — time-based sequence (if defined and no condition matched)
+//  3. Fallback
 func (h *Handler) resolveCase(route *config.Route, r *http.Request, bodyBytes []byte) string {
+	// 1. Conditions take priority.
 	for _, cond := range route.Conditions {
 		if evalCondition(cond, r, bodyBytes) {
 			return cond.Case
 		}
 	}
+
+	// 2. Transitions — resolve by elapsed time since first request.
+	if len(route.Transitions) > 0 {
+		if caseName := h.transitions.resolve(route); caseName != "" {
+			return caseName
+		}
+	}
+
+	// 3. Fallback.
 	return route.Fallback
 }
 
