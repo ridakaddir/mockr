@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package products;
+
+option go_package = "github.com/example/products";
+
+// ProductService manages the product catalogue.
+service ProductService {
+  rpc GetProduct    (GetProductRequest)    returns (GetProductResponse);
+  rpc ListProducts  (ListProductsRequest)  returns (ListProductsResponse);
+  rpc UpdateProduct (UpdateProductRequest) returns (UpdateProductResponse);
+}
+
+message GetProductRequest {
+  string product_id = 1;
+}
+
+message GetProductResponse {
+  string product_id   = 1;
+  string name         = 2;
+  double price        = 3;
+  int32  stock        = 4;
+  bool   available    = 5;
+}
+
+message ListProductsRequest {
+  string category = 1;
+  int32  limit    = 2;
+}
+
+message ListProductsResponse {
+  repeated GetProductResponse products = 1;
+  int32                       total    = 2;
+}
+
+message UpdateProductRequest {
+  string product_id = 1;
+  double price      = 2;
+  int32  stock      = 3;
+}
+
+message UpdateProductResponse {
+  string product_id = 1;
+  double price      = 2;
+  int32  stock      = 3;
+  string updated_at = 4;
+}

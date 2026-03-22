@@ -68,6 +68,12 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	return &Server{opts: opts, loader: loader, srv: srv}, nil
 }
 
+// Loader returns the config loader, allowing other servers (e.g. gRPC) to
+// share the same loaded config and config directory.
+func (s *Server) Loader() *config.Loader {
+	return s.loader
+}
+
 // Start listens and serves. It blocks until the context is cancelled.
 func (s *Server) Start(ctx context.Context) error {
 	errCh := make(chan error, 1)

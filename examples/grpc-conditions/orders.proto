@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package orders;
+
+option go_package = "github.com/example/orders";
+
+// OrderService manages order lifecycle.
+service OrderService {
+  rpc GetOrder    (GetOrderRequest)    returns (GetOrderResponse);
+  rpc PlaceOrder  (PlaceOrderRequest)  returns (PlaceOrderResponse);
+  rpc CancelOrder (CancelOrderRequest) returns (CancelOrderResponse);
+}
+
+message GetOrderRequest {
+  string order_id  = 1;
+  string region    = 2;  // "eu" | "us" | other
+}
+
+message GetOrderResponse {
+  string order_id = 1;
+  string status   = 2;
+  double total    = 3;
+  string region   = 4;
+}
+
+message PlaceOrderRequest {
+  string user_id      = 1;
+  string payment_type = 2;  // "card" | "crypto" | "invoice"
+  double amount       = 3;
+}
+
+message PlaceOrderResponse {
+  string order_id = 1;
+  string status   = 2;
+  string message  = 3;
+}
+
+message CancelOrderRequest {
+  string order_id = 1;
+  string reason   = 2;
+}
+
+message CancelOrderResponse {
+  bool   cancelled = 1;
+  string message   = 2;
+}

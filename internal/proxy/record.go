@@ -134,7 +134,7 @@ func appendRouteStub(configPath, method, path string, status int, stubFile strin
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = f.WriteString("\n" + stub)
 	return err
@@ -309,6 +309,6 @@ func gunzip(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	return io.ReadAll(r)
 }

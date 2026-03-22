@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ridakaddir/mockr/internal/generate"
 	"github.com/spf13/cobra"
@@ -12,34 +13,59 @@ var (
 	genOut    string
 	genFormat string
 	genSplit  bool
+
+	// proto generator flags
+	genProtos      []string
+	genImportPaths []string
 )
 
 var generateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Generate a mockr config directory from an OpenAPI spec",
-	Long: `Generate reads an OpenAPI 3 spec (file or URL) and produces:
-  - A mockr config file (TOML/YAML/JSON) with one route per operation
+	Short: "Generate a mockr config from an OpenAPI spec or .proto files",
+	Long: `Generate reads an OpenAPI 3 spec (file or URL) or .proto files and produces:
+  - A mockr config file (TOML/YAML/JSON) with one route per operation/method
   - Stub JSON files in stubs/ populated from spec examples or synthesised from schemas
 
-Examples:
+OpenAPI examples:
   mockr generate --spec openapi.yaml --out ./mocks
   mockr generate --spec https://petstore3.swagger.io/api/v3/openapi.json --out ./mocks
-  mockr generate --spec openapi.yaml --format yaml --split=false`,
+  mockr generate --spec openapi.yaml --format yaml --split=false
+
+Proto examples:
+  mockr generate --proto service.proto --out ./mocks
+  mockr generate --proto users.proto --proto orders.proto --out ./mocks
+  mockr generate --proto service.proto --import-path ./vendor/protos --format yaml`,
 	RunE: runGenerate,
 }
 
 func init() {
-	generateCmd.Flags().StringVarP(&genSpec, "spec", "s", "", "OpenAPI spec file path or URL (required)")
+	// OpenAPI flags.
+	generateCmd.Flags().StringVarP(&genSpec, "spec", "s", "", "OpenAPI spec file path or URL")
 	generateCmd.Flags().StringVarP(&genOut, "out", "o", "mocks", "Output directory for config files and stubs")
 	generateCmd.Flags().StringVarP(&genFormat, "format", "f", "toml", "Config format: toml, yaml, json")
-	generateCmd.Flags().BoolVar(&genSplit, "split", true, "Split routes into one file per tag (use --split=false for a single file)")
+	generateCmd.Flags().BoolVar(&genSplit, "split", true, "Split routes into one file per tag (OpenAPI only; use --split=false for a single file)")
 
-	_ = generateCmd.MarkFlagRequired("spec")
+	// Proto flags.
+	generateCmd.Flags().StringArrayVar(&genProtos, "proto", nil, "Path to a .proto file; repeat for multiple files (enables proto mode)")
+	generateCmd.Flags().StringArrayVar(&genImportPaths, "import-path", nil, "Extra directory to search for proto imports; repeat for multiple paths")
 
 	rootCmd.AddCommand(generateCmd)
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
+	// Proto mode: --proto takes precedence over --spec.
+	if len(genProtos) > 0 {
+		return runGenerateProto()
+	}
+
+	// OpenAPI mode: --spec is required.
+	if genSpec == "" {
+		return fmt.Errorf("either --spec (OpenAPI) or --proto (protobuf) is required")
+	}
+	return runGenerateOpenAPI()
+}
+
+func runGenerateOpenAPI() error {
 	opts := generate.Options{
 		Spec:   genSpec,
 		OutDir: genOut,
@@ -63,6 +89,33 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("\nStub files written to: %s/stubs/\n", genOut)
 	fmt.Printf("\nRun: mockr --config %s\n", genOut)
+
+	return nil
+}
+
+func runGenerateProto() error {
+	opts := generate.ProtoOptions{
+		ProtoFiles:  genProtos,
+		ImportPaths: genImportPaths,
+		OutDir:      genOut,
+		Format:      genFormat,
+	}
+
+	fmt.Printf("Loading proto files: %s\n", strings.Join(genProtos, ", "))
+
+	result, err := generate.RunProto(opts)
+	if err != nil {
+		return fmt.Errorf("proto generate failed: %w", err)
+	}
+
+	fmt.Printf("\ngRPC methods found: %d\n", result.Methods)
+	fmt.Printf("Stub files: %d\n", len(result.StubFiles))
+	fmt.Printf("\nConfig files written:\n")
+	for _, f := range result.ConfigFiles {
+		fmt.Printf("  %s\n", f)
+	}
+	fmt.Printf("\nStub files written to: %s/stubs/\n", genOut)
+	fmt.Printf("\nRun: mockr --config %s --grpc-proto %s\n", genOut, genProtos[0])
 
 	return nil
 }

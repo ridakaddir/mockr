@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "itemId": "item_001",
+      "name": "Widget A",
+      "status": "active",
+      "quantity": 10
+    },
+    {
+      "itemId": "item_002",
+      "name": "Widget B",
+      "status": "active",
+      "quantity": 5
+    },
+    {
+      "itemId": "item_003",
+      "name": "Widget C",
+      "status": "inactive",
+      "quantity": 0
+    }
+  ]
+}

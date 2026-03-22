@@ -124,6 +124,23 @@ func indentJSON(raw []byte) []byte {
 	return buf.Bytes()
 }
 
+// parseJSONBody decodes JSON body bytes into a map. Returns an empty map on failure.
+func parseJSONBody(body []byte) map[string]interface{} {
+	out := make(map[string]interface{})
+	if len(body) > 0 {
+		_ = json.Unmarshal(body, &out)
+	}
+	return out
+}
+
+// absPath resolves a relative file path against configDir.
+func absPath(filePath, configDir string) string {
+	if configDir != "" && !filepath.IsAbs(filePath) {
+		return filepath.Join(configDir, filePath)
+	}
+	return filePath
+}
+
 // slugify converts a URL path to a safe filename segment.
 func slugify(s string) string {
 	s = strings.TrimPrefix(s, "/")

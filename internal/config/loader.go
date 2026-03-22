@@ -16,12 +16,12 @@ import (
 
 // Loader holds the current merged config and watches for changes.
 type Loader struct {
-	mu       sync.RWMutex
-	cfg      *Config
-	path     string // file or directory
-	isDir    bool
-	watcher  *fsnotify.Watcher
-	onChange func(*Config)
+	mu          sync.RWMutex
+	cfg         *Config
+	path        string // file or directory
+	isDir       bool
+	watcher     *fsnotify.Watcher
+	onChangeFns []func(*Config)
 }
 
 // NewLoader loads config from path (file or directory) and starts a file watcher.
@@ -40,10 +40,12 @@ func NewLoader(path string, onChange func(*Config)) (*Loader, error) {
 	}
 
 	l := &Loader{
-		cfg:      cfg,
-		path:     path,
-		isDir:    isDir,
-		onChange: onChange,
+		cfg:   cfg,
+		path:  path,
+		isDir: isDir,
+	}
+	if onChange != nil {
+		l.onChangeFns = append(l.onChangeFns, onChange)
 	}
 
 	if err := l.watch(); err != nil {
@@ -76,6 +78,15 @@ func (l *Loader) Close() {
 	if l.watcher != nil {
 		_ = l.watcher.Close()
 	}
+}
+
+// AddOnChange registers an additional callback invoked whenever any config
+// file changes. Callbacks are called in the order they are registered.
+// Safe to call from any goroutine.
+func (l *Loader) AddOnChange(fn func(*Config)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.onChangeFns = append(l.onChangeFns, fn)
 }
 
 // ConfigDir returns the directory that contains the config file(s).
@@ -125,9 +136,11 @@ func (l *Loader) watch() error {
 					}
 					l.mu.Lock()
 					l.cfg = cfg
+					fns := make([]func(*Config), len(l.onChangeFns))
+					copy(fns, l.onChangeFns)
 					l.mu.Unlock()
-					if l.onChange != nil {
-						l.onChange(cfg)
+					for _, fn := range fns {
+						fn(cfg)
 					}
 				}
 			case _, ok := <-w.Errors:
@@ -175,6 +188,7 @@ func loadDir(dir string) (*Config, error) {
 			return nil, fmt.Errorf("loading %s: %w", f, err)
 		}
 		merged.Routes = append(merged.Routes, cfg.Routes...)
+		merged.GRPCRoutes = append(merged.GRPCRoutes, cfg.GRPCRoutes...)
 	}
 
 	return merged, nil

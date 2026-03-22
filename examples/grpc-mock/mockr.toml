@@ -1,0 +1,68 @@
+# gRPC mock — basic unary responses
+#
+# Run:
+#   mockr --config examples/grpc-mock --grpc-proto examples/grpc-mock/users.proto
+#
+# Try (requires grpcurl):
+#   grpcurl -plaintext -d '{"user_id":"1"}' localhost:50051 users.UserService/GetUser
+#   grpcurl -plaintext -d '{"page":1,"page_size":10}' localhost:50051 users.UserService/ListUsers
+#   grpcurl -plaintext -d '{"name":"Alice","email":"alice@example.com","role":"admin"}' localhost:50051 users.UserService/CreateUser
+#
+# Switch cases by editing fallback:
+#   fallback = "ok"        → success response from stub file
+#   fallback = "not_found" → gRPC NOT_FOUND (code 5)
+#   fallback = "error"     → gRPC INTERNAL (code 13) with delay
+
+# ─── GetUser ──────────────────────────────────────────────────────────────────
+
+[[grpc_routes]]
+match    = "/users.UserService/GetUser"
+enabled  = true
+fallback = "ok"
+
+  [grpc_routes.cases.ok]
+  status = 0  # gRPC OK
+  file   = "stubs/get_user.json"
+
+  [grpc_routes.cases.not_found]
+  status = 5  # gRPC NOT_FOUND
+  json   = '{"message": "user not found"}'
+
+  [grpc_routes.cases.error]
+  status = 13  # gRPC INTERNAL
+  json   = '{"message": "internal server error"}'
+  delay  = 1
+
+# ─── ListUsers ────────────────────────────────────────────────────────────────
+
+[[grpc_routes]]
+match    = "/users.UserService/ListUsers"
+enabled  = true
+fallback = "ok"
+
+  [grpc_routes.cases.ok]
+  status = 0
+  file   = "stubs/list_users.json"
+
+  [grpc_routes.cases.empty]
+  status = 0
+  json   = '{"users": [], "total": 0}'
+
+  [grpc_routes.cases.error]
+  status = 13
+  json   = '{"message": "failed to fetch users"}'
+
+# ─── CreateUser ───────────────────────────────────────────────────────────────
+
+[[grpc_routes]]
+match    = "/users.UserService/CreateUser"
+enabled  = true
+fallback = "ok"
+
+  [grpc_routes.cases.ok]
+  status = 0
+  json   = '{"userId": "{{uuid}}", "name": "New User", "email": "user@example.com", "role": "member"}'
+
+  [grpc_routes.cases.already_exists]
+  status = 6  # gRPC ALREADY_EXISTS
+  json   = '{"message": "a user with this email already exists"}'

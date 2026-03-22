@@ -1,0 +1,100 @@
+# gRPC persist — stateful CRUD backed by stubs/items.json
+#
+# All write operations mutate stubs/items.json on disk.
+# Subsequent reads reflect the change immediately.
+#
+# Run:
+#   mockr --config examples/grpc-persist \
+#         --grpc-proto examples/grpc-persist/items.proto
+#
+# Reset the stub file after testing:
+#   git checkout examples/grpc-persist/stubs/items.json
+#
+# ─── Try (requires grpcurl) ───────────────────────────────────────────────────
+#
+#   # List all items
+#   grpcurl -plaintext -d '{}' localhost:50051 items.ItemService/ListItems
+#
+#   # Create a new item (appended to stubs/items.json)
+#   grpcurl -plaintext \
+#     -d '{"item_id":"item_004","name":"Widget D","status":"active","quantity":20}' \
+#     localhost:50051 items.ItemService/CreateItem
+#
+#   # Update an item (merges fields into the matching record)
+#   grpcurl -plaintext \
+#     -d '{"item_id":"item_002","name":"Widget B Pro","status":"active","quantity":99}' \
+#     localhost:50051 items.ItemService/UpdateItem
+#
+#   # Delete an item (removes the record from the array)
+#   grpcurl -plaintext \
+#     -d '{"item_id":"item_003"}' \
+#     localhost:50051 items.ItemService/DeleteItem
+#
+#   # Confirm changes persisted
+#   grpcurl -plaintext -d '{}' localhost:50051 items.ItemService/ListItems
+#
+#   # Delete non-existent item → NOT_FOUND (code 5)
+#   grpcurl -plaintext \
+#     -d '{"item_id":"item_999"}' \
+#     localhost:50051 items.ItemService/DeleteItem
+
+# ─── ListItems ────────────────────────────────────────────────────────────────
+
+[[grpc_routes]]
+match    = "/items.ItemService/ListItems"
+enabled  = true
+fallback = "ok"
+
+  [grpc_routes.cases.ok]
+  status = 0
+  file   = "stubs/items.json"
+
+# ─── CreateItem ───────────────────────────────────────────────────────────────
+# persist = true + merge = "append": appends the incoming request body as a new
+# record in the items array and writes stubs/items.json back to disk.
+
+[[grpc_routes]]
+match    = "/items.ItemService/CreateItem"
+enabled  = true
+fallback = "created"
+
+  [grpc_routes.cases.created]
+  status    = 0
+  file      = "stubs/items.json"
+  persist   = true
+  merge     = "append"
+  array_key = "items"
+
+# ─── UpdateItem ───────────────────────────────────────────────────────────────
+# persist = true + merge = "replace": finds the record where itemId matches the
+# incoming item_id field and merges the request body onto it.
+
+[[grpc_routes]]
+match    = "/items.ItemService/UpdateItem"
+enabled  = true
+fallback = "updated"
+
+  [grpc_routes.cases.updated]
+  status    = 0
+  file      = "stubs/items.json"
+  persist   = true
+  merge     = "replace"
+  key       = "itemId"   # field name in the stored record to match on
+  array_key = "items"
+
+# ─── DeleteItem ───────────────────────────────────────────────────────────────
+# persist = true + merge = "delete": removes the record where itemId matches
+# the incoming item_id field. Returns NOT_FOUND (code 5) if not found.
+
+[[grpc_routes]]
+match    = "/items.ItemService/DeleteItem"
+enabled  = true
+fallback = "deleted"
+
+  [grpc_routes.cases.deleted]
+  status    = 0
+  file      = "stubs/items.json"
+  persist   = true
+  merge     = "delete"
+  key       = "itemId"
+  array_key = "items"

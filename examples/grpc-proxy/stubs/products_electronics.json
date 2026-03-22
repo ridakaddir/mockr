@@ -1,0 +1,26 @@
+{
+  "products": [
+    {
+      "productId": "prod_001",
+      "name": "Wireless Headphones",
+      "price": 89.99,
+      "stock": 42,
+      "available": true
+    },
+    {
+      "productId": "prod_002",
+      "name": "Mechanical Keyboard",
+      "price": 149.99,
+      "stock": 15,
+      "available": true
+    },
+    {
+      "productId": "prod_003",
+      "name": "USB-C Hub",
+      "price": 49.99,
+      "stock": 0,
+      "available": false
+    }
+  ],
+  "total": 3
+}
