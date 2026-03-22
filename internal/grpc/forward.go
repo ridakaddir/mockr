@@ -25,7 +25,7 @@ func forwardGRPC(stream grpc.ServerStream, target, fullMethod string, rawReq []b
 	if err != nil {
 		return status.Errorf(codes.Unavailable, "dial upstream %q: %v", target, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Propagate incoming metadata (headers) to the upstream.
 	ctx := stream.Context()

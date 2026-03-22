@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/desc/protoparse"
-	"github.com/jhump/protoreflect/dynamic"
+	"github.com/jhump/protoreflect/desc"            //nolint:staticcheck
+	"github.com/jhump/protoreflect/desc/protoparse" //nolint:staticcheck
+	"github.com/jhump/protoreflect/dynamic"         //nolint:staticcheck
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoregistry"
 )

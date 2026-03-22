@@ -103,8 +103,3 @@ func resolveKeyValue(key string, r *http.Request, bodyBytes []byte, routePattern
 	}
 	return ""
 }
-
-// writeStubFile is kept for record.go compatibility.
-func writeStubFile(path string, root map[string]interface{}) error {
-	return persist.WriteStub(path, root)
-}

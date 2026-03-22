@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/desc/protoparse"
+	"github.com/jhump/protoreflect/desc"            //nolint:staticcheck
+	"github.com/jhump/protoreflect/desc/protoparse" //nolint:staticcheck
 )
 
 // ProtoOptions configures the proto → config generator.

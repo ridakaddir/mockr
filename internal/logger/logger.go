@@ -93,12 +93,12 @@ func LogGRPC(method string, code codes.Code, latency time.Duration, source strin
 		src = "unknown"
 	}
 
-	switch {
-	case code == codes.OK:
+	switch code {
+	case codes.OK:
 		l.Info(method, "code", code.String(), "latency", latency, "via", src)
-	case code == codes.NotFound || code == codes.InvalidArgument ||
-		code == codes.AlreadyExists || code == codes.PermissionDenied ||
-		code == codes.Unauthenticated || code == codes.Unimplemented:
+	case codes.NotFound, codes.InvalidArgument,
+		codes.AlreadyExists, codes.PermissionDenied,
+		codes.Unauthenticated, codes.Unimplemented:
 		l.Warn(method, "code", code.String(), "latency", latency, "via", src)
 	default:
 		l.Error(method, "code", code.String(), "latency", latency, "via", src)

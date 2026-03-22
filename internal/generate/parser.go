@@ -54,7 +54,7 @@ func loadFromURL(loader *openapi3.Loader, rawURL string) (*openapi3.T, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetching spec from %s: %w", rawURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetching spec: HTTP %d from %s", resp.StatusCode, rawURL)
