@@ -14,8 +14,8 @@ import (
 
 // evalCondition checks whether a single condition matches the request.
 // The request body is read from bodyBytes (already buffered) rather than r.Body.
-func evalCondition(cond config.Condition, r *http.Request, bodyBytes []byte) bool {
-	val, found := extractValue(cond.Source, cond.Field, r, bodyBytes)
+func evalCondition(cond config.Condition, r *http.Request, bodyBytes []byte, routePattern string, pathParams map[string]string) bool {
+	val, found := extractValue(cond.Source, cond.Field, r, bodyBytes, routePattern, pathParams)
 
 	switch cond.Op {
 	case "exists":
@@ -44,8 +44,21 @@ func evalCondition(cond config.Condition, r *http.Request, bodyBytes []byte) boo
 
 // extractValue retrieves a value from the request based on source and field.
 // Returns the string value and whether it was found.
-func extractValue(source, field string, r *http.Request, bodyBytes []byte) (string, bool) {
+func extractValue(source, field string, r *http.Request, bodyBytes []byte, routePattern string, pathParams map[string]string) (string, bool) {
 	switch strings.ToLower(source) {
+	case "path":
+		// NEW: Check named params first
+		if pathParams != nil {
+			if v, ok := pathParams[field]; ok && v != "" {
+				return v, true
+			}
+		}
+		// Fallback: existing wildcard behavior
+		if v, ok := extractWildcardValue(routePattern, r.URL.Path); ok && v != "" {
+			return v, true
+		}
+		return "", false
+
 	case "query":
 		v := r.URL.Query().Get(field)
 		return v, v != ""

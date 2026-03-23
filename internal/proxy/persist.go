@@ -14,12 +14,12 @@ import (
 // writes the file back, and sends the appropriate HTTP response.
 //
 // Returns true if it handled the response (caller should not write anything else).
-func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes []byte, routePattern string, configDir string) bool {
+func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes []byte, routePattern string, configDir string, pathParams map[string]string) bool {
 	if !c.Persist {
 		return false
 	}
 
-	filePath := resolveFilePath(c.File, r, bodyBytes, configDir)
+	filePath := resolveFilePath(c.File, r, bodyBytes, configDir, routePattern, pathParams)
 
 	// Parse request body for incoming record.
 	incoming := parseJSONBody(bodyBytes)
@@ -39,7 +39,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 		writeJSON(w, c.StatusCode(), incoming)
 
 	case "replace":
-		keyVal := resolveKeyValue(c.Key, r, bodyBytes, routePattern)
+		keyVal := resolveKeyValue(c.Key, r, bodyBytes, routePattern, pathParams)
 		updated, err := persist.Replace(filePath, c.ArrayKey, c.Key, keyVal, incoming)
 		if err != nil {
 			if persist.IsNotFound(err) {
@@ -58,7 +58,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 		writeJSON(w, c.StatusCode(), updated)
 
 	case "delete":
-		keyVal := resolveKeyValue(c.Key, r, bodyBytes, routePattern)
+		keyVal := resolveKeyValue(c.Key, r, bodyBytes, routePattern, pathParams)
 		if err := persist.Delete(filePath, c.ArrayKey, c.Key, keyVal); err != nil {
 			if persist.IsNotFound(err) {
 				writeJSON(w, http.StatusNotFound, map[string]string{
@@ -84,26 +84,36 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 }
 
 // resolveFilePath applies dynamic placeholders and configDir to a file path.
-func resolveFilePath(filePath string, r *http.Request, bodyBytes []byte, configDir string) string {
+func resolveFilePath(filePath string, r *http.Request, bodyBytes []byte, configDir string, routePattern string, pathParams map[string]string) string {
 	if hasDynamicPlaceholders(filePath) {
-		filePath = resolveDynamicFile(filePath, r, bodyBytes)
+		filePath = resolveDynamicFile(filePath, r, bodyBytes, routePattern, pathParams)
 	}
 	return absPath(filePath, configDir)
 }
 
-// resolveKeyValue finds the value for key using: path wildcard → body → query.
-func resolveKeyValue(key string, r *http.Request, bodyBytes []byte, routePattern string) string {
-	// 1. Try path wildcard.
+// resolveKeyValue finds the value for key using: named path params → path wildcard → body → query.
+func resolveKeyValue(key string, r *http.Request, bodyBytes []byte, routePattern string, pathParams map[string]string) string {
+	// 1. Try named path parameters first.
+	if pathParams != nil {
+		if v, ok := pathParams[key]; ok && v != "" {
+			return v
+		}
+	}
+
+	// 2. Try path wildcard (existing behavior for backward compatibility).
 	if v, ok := extractWildcardValue(routePattern, r.URL.Path); ok && v != "" {
 		return v
 	}
-	// 2. Try request body.
+
+	// 3. Try request body.
 	if v, found := extractBodyField(key, bodyBytes); found {
 		return v
 	}
-	// 3. Try query param.
+
+	// 4. Try query param.
 	if v := r.URL.Query().Get(key); v != "" {
 		return v
 	}
+
 	return ""
 }

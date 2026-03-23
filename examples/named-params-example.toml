@@ -1,0 +1,57 @@
+[[routes]]
+method = "GET"
+match = "/api/v1/environments/{envId}/endpoint/{endpointId}"
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  json = '''
+  {
+    "message": "Named parameters working!",
+    "timestamp": "{{timestamp}}"
+  }
+  '''
+  # Note: Named params {envId} and {endpointId} are extracted and available
+  # for persistence key resolution and dynamic file paths, but not currently
+  # supported in JSON response templating
+
+[[routes]]
+method = "POST"
+match = "/api/users/{userId}/posts"
+fallback = "create_post"
+
+  [routes.cases.create_post]
+  status = 201
+  file = "stubs/posts.json"
+  persist = true
+  merge = "append"
+  key = "userId"
+  array_key = "posts"
+
+[[routes]]
+method = "PUT"
+match = "/api/users/{userId}/posts/{postId}"
+fallback = "update_post"
+
+  [routes.cases.update_post]
+  status = 200
+  file = "stubs/posts.json"
+  persist = true
+  merge = "replace"
+  key = "postId"
+  array_key = "posts"
+
+# Example with mixed wildcards and named parameters
+[[routes]]
+method = "GET"
+match = "/api/v1/*/environments/{envId}/endpoint/{endpointId}"
+fallback = "mixed_success"
+
+  [routes.cases.mixed_success]
+  status = 200
+  json = '''
+  {
+    "message": "Mixed wildcard and named parameters working!",
+    "timestamp": "{{timestamp}}"
+  }
+  '''
