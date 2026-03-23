@@ -24,8 +24,17 @@ examples/
 │   ├── orders.toml           # POST /api/orders — nested dot-notation body fields
 │   └── stubs/
 │
-├── persist/                  # Stateful CRUD
+├── persist/                  # Stateful CRUD (wrapped object mode)
 │   ├── todos.toml            # Full CRUD backed by stubs/todos.json
+│   └── stubs/
+│
+├── bare-array-persist/       # Stateful CRUD with bare arrays
+│   ├── mockr.toml            # Full CRUD — operates on bare array stubs
+│   └── stubs/
+│
+├── persist-comparison/       # Side-by-side persist mode comparison  
+│   ├── wrapped.toml          # Traditional wrapped object approach
+│   ├── bare.toml             # New bare array approach
 │   └── stubs/
 │
 ├── dynamic-files/            # {source.field} placeholders in file paths
@@ -133,6 +142,45 @@ http DELETE :4000/api/todos/99                             # → 404
 ```
 
 Reset: `git checkout examples/persist/stubs/todos.json`
+
+---
+
+## bare-array-persist
+
+A stateful todo list using **bare array mode** for true API contract compatibility. The stub file is a bare JSON array `[{...}]`, and responses match exactly.
+
+```sh
+mockr --config examples/bare-array-persist
+```
+
+```sh
+http :4000/api/todos                                       # returns: [{"id":"1",...}]
+http POST :4000/api/todos id=4 title="Review PR" done:=false  # appends to bare array
+http PUT :4000/api/todos/2 id=2 title="Write tests" done:=true # updates in bare array
+http DELETE :4000/api/todos/3                              # removes from bare array
+```
+
+**Key difference**: GET `/api/todos` returns `[{...}]` instead of `{"todos": [{...}]}`.
+
+Reset: `git checkout examples/bare-array-persist/stubs/todos-bare.json`
+
+---
+
+## persist-comparison
+
+Side-by-side demonstration of **wrapped object mode** vs **bare array mode** for persist operations.
+
+**Wrapped mode:**
+```sh
+mockr --config examples/persist-comparison/wrapped.toml    # GET returns {"todos": [...]}
+```
+
+**Bare array mode:**
+```sh  
+mockr --config examples/persist-comparison/bare.toml       # GET returns [...]
+```
+
+See `examples/persist-comparison/README.md` for detailed comparison and migration guidance.
 
 ---
 

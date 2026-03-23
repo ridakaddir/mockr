@@ -862,25 +862,30 @@ key     = "id"
 
 ### Configuration Validation
 
-Mockr validates that your configuration matches your stub file format:
+Mockr automatically validates that your configuration matches your stub file format:
 
-- **Wrapped mode** (with `array_key`): Stub file must be a JSON object
-- **Bare array mode** (without `array_key`): Stub file must be a JSON array
+- **Wrapped mode** (with `array_key`): Stub file must be a JSON object containing the specified array field
+- **Bare array mode** (without `array_key`): Stub file must be a JSON array at the root level
+
+**Validation happens on every persist operation** to ensure data consistency and provide helpful error guidance.
 
 **Common validation errors:**
 
 ```bash
 # Mismatch: object file without array_key
-Error: stub file contains a JSON object but array_key is not specified.
-Fix: Add array_key = "users" or convert file to bare array format
+Error: stub file "stubs/users.json" contains a JSON object but array_key is not specified. 
+Either provide array_key to specify which field contains the array, or convert the file to a bare JSON array
 
 # Mismatch: array file with array_key  
-Error: stub file is a bare JSON array but array_key="users" is specified.
-Fix: Remove array_key or wrap array in object {"users": [...]}
+Error: stub file "stubs/users.json" is a bare JSON array but array_key="users" is specified. 
+Either remove array_key or wrap the array in an object like {"users": [...]}
 
 # Wrong field name
-Error: array_key "items" not found. Available keys: ["users", "metadata"]
-Fix: Use correct field name or check stub file structure
+Error: array_key "items" not found in stub file. Available keys: ["data", "metadata"]
+
+# Wrong field type
+Error: field "users" is not a JSON array (found string). 
+Ensure the field contains an array like: "users": [{...}, {...}]
 ```
 
 ### When to Use Each Mode
@@ -901,6 +906,8 @@ Fix: Use correct field name or check stub file structure
 - **Wrapped Object**: See `examples/persist/` 
 - **Bare Array**: See `examples/bare-array-persist/`
 - **Side-by-side comparison**: See `examples/persist-comparison/`
+
+**Performance Note**: Persist operations read files only once per operation, with automatic validation and type detection for optimal performance.
 
 **Key resolution order for `replace`/`delete`:** path wildcard → request body → query param.
 
