@@ -17,9 +17,9 @@ import (
 )
 
 // serveMock writes a mock response for the given case to w.
-// bodyBytes is the buffered request body (needed for dynamic file resolution).
-// configDir is the directory of the config file, used to resolve relative file paths.
-func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes []byte, configDir string) {
+// The responseWriter w should be a buffered responseRecorder to allow
+// the caller to inspect the response before finalizing it.
+func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes []byte, configDir string, routePattern string, pathParams map[string]string) {
 	if c.Delay > 0 {
 		time.Sleep(time.Duration(c.Delay) * time.Second)
 	}
@@ -32,7 +32,7 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 	case c.File != "":
 		filePath := c.File
 		if hasDynamicPlaceholders(filePath) {
-			filePath = resolveDynamicFile(filePath, r, bodyBytes)
+			filePath = resolveDynamicFile(filePath, r, bodyBytes, routePattern, pathParams)
 		}
 		// Resolve relative paths against the config file's directory.
 		if configDir != "" && !filepath.IsAbs(filePath) {

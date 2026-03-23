@@ -1,0 +1,9 @@
+{
+  "endpointId": "12345",
+  "environment": "prod",
+  "config": {
+    "timeout": 30000,
+    "retries": 3,
+    "rateLimit": 1000
+  }
+}

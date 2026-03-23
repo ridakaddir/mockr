@@ -1,0 +1,30 @@
+[[routes]]
+method = "GET"
+match = "/api/users/{userId}/profile"
+fallback = "user_profile"
+
+  [routes.cases.user_profile]
+  status = 200
+  file = "stubs/user-{path.userId}-profile.json"
+
+[[routes]]
+method = "GET" 
+match = "/api/v1/environments/{envId}/endpoint/{endpointId}"
+fallback = "endpoint_config"
+
+  [routes.cases.endpoint_config]
+  status = 200
+  file = "stubs/env-{path.envId}/endpoint-{path.endpointId}.json"
+
+[[routes]]
+method = "POST"
+match = "/api/organizations/{orgId}/projects"
+fallback = "create_project"
+
+  [routes.cases.create_project]
+  status = 201
+  file = "stubs/org-{path.orgId}-projects.json"
+  persist = true
+  merge = "append"
+  key = "orgId"
+  array_key = "projects"

@@ -1,0 +1,19 @@
+{
+  "projects": [
+    {
+      "name": "Website Redesign",
+      "orgId": "company1",
+      "projectId": "proj1"
+    },
+    {
+      "name": "Mobile App",
+      "orgId": "company1",
+      "projectId": "proj2"
+    },
+    {
+      "name": "AI Initiative",
+      "orgId": "company1",
+      "projectId": "proj3"
+    }
+  ]
+}

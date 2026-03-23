@@ -16,7 +16,8 @@ var placeholderRe = regexp.MustCompile(`\{(\w+)\.([^}]+)\}`)
 //	"stubs/user-{query.username}-orders.json"  → "stubs/user-john-orders.json"
 //	"stubs/{body.user.id}-profile.json"        → "stubs/42-profile.json"
 //	"stubs/{header.X-User-Id}-data.json"       → "stubs/abc-data.json"
-func resolveDynamicFile(filePath string, r *http.Request, bodyBytes []byte) string {
+//	"stubs/endpoint-{path.endpointId}.json"    → "stubs/endpoint-12345.json"
+func resolveDynamicFile(filePath string, r *http.Request, bodyBytes []byte, routePattern string, pathParams map[string]string) string {
 	return placeholderRe.ReplaceAllStringFunc(filePath, func(match string) string {
 		sub := placeholderRe.FindStringSubmatch(match)
 		if len(sub) != 3 {
@@ -25,7 +26,7 @@ func resolveDynamicFile(filePath string, r *http.Request, bodyBytes []byte) stri
 		source := strings.ToLower(sub[1])
 		field := sub[2]
 
-		val, found := extractValue(source, field, r, bodyBytes)
+		val, found := extractValue(source, field, r, bodyBytes, routePattern, pathParams)
 		if !found {
 			return match // leave placeholder as-is if not resolved
 		}

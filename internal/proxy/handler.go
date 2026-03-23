@@ -81,12 +81,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !strings.EqualFold(route.Method, r.Method) {
 			continue
 		}
-		if !matchPath(route.Match, matchPath_) {
+		// Check if route matches and extract any named parameters
+		matched, pathParams := matchWithNamedParams(route.Match, matchPath_)
+		if !matched {
 			continue
 		}
 
 		// Route matched — resolve case.
-		caseName := h.resolveCase(route, r, bodyBytes)
+		caseName := h.resolveCase(route, r, bodyBytes, route.Match, pathParams)
 		if caseName == "" {
 			// No condition matched and no fallback — fall through to proxy.
 			break
@@ -100,14 +102,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Persist (mutating methods).
 		if c.Persist {
-			if handled := applyPersist(w, r, c, bodyBytes, route.Match, h.loader.ConfigDir()); handled {
+			if handled := applyPersist(w, r, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams); handled {
 				return
 			}
 		}
 
 		// Serve mock response into a buffer so we can inspect it first.
 		rec := newResponseRecorder(w)
-		serveMock(rec, r, c, bodyBytes, h.loader.ConfigDir())
+		serveMock(rec, r, c, bodyBytes, h.loader.ConfigDir(), route.Match, pathParams)
 
 		// If the dynamic file was missing, try next condition / fallback / proxy.
 		if isFileMissing(rec) {
@@ -153,10 +155,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //  1. Conditions — first matching condition wins
 //  2. Transitions — time-based sequence (if defined and no condition matched)
 //  3. Fallback
-func (h *Handler) resolveCase(route *config.Route, r *http.Request, bodyBytes []byte) string {
+func (h *Handler) resolveCase(route *config.Route, r *http.Request, bodyBytes []byte, routePattern string, pathParams map[string]string) string {
 	// 1. Conditions take priority.
 	for _, cond := range route.Conditions {
-		if evalCondition(cond, r, bodyBytes) {
+		if evalCondition(cond, r, bodyBytes, routePattern, pathParams) {
 			return cond.Case
 		}
 	}
