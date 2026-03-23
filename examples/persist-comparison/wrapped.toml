@@ -1,0 +1,61 @@
+# Wrapped Object Mode - Traditional persist approach
+#
+# File: stubs/todos-wrapped.json → {"todos": [...]}
+# Response: GET /api/todos → {"todos": [...]}
+# Configuration: array_key = "todos" (required)
+#
+# Run: mockr --config examples/persist-comparison/wrapped.toml
+
+[[routes]]
+method   = "GET"
+match    = "/api/todos"
+enabled  = true
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  file   = "stubs/todos-wrapped.json"
+
+
+[[routes]]
+method   = "POST"
+match    = "/api/todos"
+enabled  = true
+fallback = "created"
+
+  [routes.cases.created]
+  status    = 201
+  file      = "stubs/todos-wrapped.json"
+  persist   = true
+  merge     = "append"
+  array_key = "todos"      # Required: specifies array field
+
+
+[[routes]]
+method   = "PUT"
+match    = "/api/todos/*"
+enabled  = true
+fallback = "updated"
+
+  [routes.cases.updated]
+  status    = 200
+  file      = "stubs/todos-wrapped.json"
+  persist   = true
+  merge     = "replace"
+  key       = "id"
+  array_key = "todos"      # Required: specifies array field
+
+
+[[routes]]
+method   = "DELETE"
+match    = "/api/todos/*"
+enabled  = true
+fallback = "deleted"
+
+  [routes.cases.deleted]
+  status    = 204
+  file      = "stubs/todos-wrapped.json"
+  persist   = true
+  merge     = "delete"
+  key       = "id"
+  array_key = "todos"      # Required: specifies array field

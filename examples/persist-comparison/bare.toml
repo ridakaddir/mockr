@@ -1,0 +1,61 @@
+# Bare Array Mode - New persist approach
+#
+# File: stubs/todos-bare.json → [...]
+# Response: GET /api/todos → [...]  
+# Configuration: array_key omitted (automatic detection)
+#
+# Run: mockr --config examples/persist-comparison/bare.toml
+
+[[routes]]
+method   = "GET"
+match    = "/api/todos"
+enabled  = true
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  file   = "stubs/todos-bare.json"
+
+
+[[routes]]
+method   = "POST"
+match    = "/api/todos"
+enabled  = true
+fallback = "created"
+
+  [routes.cases.created]
+  status  = 201
+  file    = "stubs/todos-bare.json"
+  persist = true
+  merge   = "append"
+  # array_key omitted — operates on bare array
+
+
+[[routes]]
+method   = "PUT"
+match    = "/api/todos/*"
+enabled  = true
+fallback = "updated"
+
+  [routes.cases.updated]
+  status  = 200
+  file    = "stubs/todos-bare.json"
+  persist = true
+  merge   = "replace"
+  key     = "id"
+  # array_key omitted — operates on bare array
+
+
+[[routes]]
+method   = "DELETE"
+match    = "/api/todos/*"
+enabled  = true
+fallback = "deleted"
+
+  [routes.cases.deleted]
+  status  = 204
+  file    = "stubs/todos-bare.json"
+  persist = true
+  merge   = "delete"
+  key     = "id"
+  # array_key omitted — operates on bare array
