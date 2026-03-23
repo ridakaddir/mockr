@@ -191,6 +191,44 @@ func TestEmptyBareArray(t *testing.T) {
 	assert.Equal(t, "First", first["name"])
 }
 
+// === Edge Case Tests ===
+
+func TestReadArrayWithNull(t *testing.T) {
+	tmpFile := createTempArrayFile(t, `null`)
+
+	_, err := ReadArray(tmpFile)
+	require.Error(t, err)
+	assert.True(t, IsConfigError(err))
+	assert.Contains(t, err.Error(), "must contain a JSON array in bare-array mode, got <nil>")
+}
+
+func TestReadArrayWithString(t *testing.T) {
+	tmpFile := createTempArrayFile(t, `"just a string"`)
+
+	_, err := ReadArray(tmpFile)
+	require.Error(t, err)
+	assert.True(t, IsConfigError(err))
+	assert.Contains(t, err.Error(), "must contain a JSON array in bare-array mode, got string")
+}
+
+func TestReadArrayWithNumber(t *testing.T) {
+	tmpFile := createTempArrayFile(t, `42`)
+
+	_, err := ReadArray(tmpFile)
+	require.Error(t, err)
+	assert.True(t, IsConfigError(err))
+	assert.Contains(t, err.Error(), "must contain a JSON array in bare-array mode, got float64")
+}
+
+func TestReadArrayWithBoolean(t *testing.T) {
+	tmpFile := createTempArrayFile(t, `true`)
+
+	_, err := ReadArray(tmpFile)
+	require.Error(t, err)
+	assert.True(t, IsConfigError(err))
+	assert.Contains(t, err.Error(), "must contain a JSON array in bare-array mode, got bool")
+}
+
 // === Validation Tests ===
 
 func TestValidationMismatchObjectWithoutArrayKey(t *testing.T) {
