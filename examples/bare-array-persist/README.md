@@ -12,7 +12,7 @@ This example demonstrates mockr's bare array persist mode, where stub files are 
 
 ```
 examples/bare-array-persist/
-├── todos-bare.toml          # Configuration (array_key omitted)
+├── mockr.toml               # Configuration (array_key omitted)
 ├── stubs/
 │   └── todos-bare.json      # Bare array: [{"id": "1"}, ...]
 └── README.md                # This file

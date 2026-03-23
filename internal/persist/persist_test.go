@@ -220,7 +220,7 @@ func TestValidationMismatchArrayWithArrayKey(t *testing.T) {
 func TestDetectFileTypeArray(t *testing.T) {
 	tmpFile := createTempArrayFile(t, `[{"id":"1"}]`)
 
-	fileType, err := detectFileType(tmpFile)
+	_, fileType, err := readAndDetectStubFile(tmpFile)
 	require.NoError(t, err)
 	assert.Equal(t, "array", fileType)
 }
@@ -228,7 +228,7 @@ func TestDetectFileTypeArray(t *testing.T) {
 func TestDetectFileTypeObject(t *testing.T) {
 	tmpFile := createTempObjectFile(t, `{"todos":[{"id":"1"}]}`)
 
-	fileType, err := detectFileType(tmpFile)
+	_, fileType, err := readAndDetectStubFile(tmpFile)
 	require.NoError(t, err)
 	assert.Equal(t, "object", fileType)
 }
@@ -236,7 +236,7 @@ func TestDetectFileTypeObject(t *testing.T) {
 func TestDetectFileTypeInvalid(t *testing.T) {
 	tmpFile := createTempArrayFile(t, `"just a string"`)
 
-	fileType, err := detectFileType(tmpFile)
+	_, fileType, err := readAndDetectStubFile(tmpFile)
 	require.Error(t, err)
 	assert.Equal(t, "unknown", fileType)
 	assert.True(t, IsConfigError(err))
@@ -322,7 +322,7 @@ func TestGetArrayMissingKey(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, IsConfigError(err))
 	assert.Contains(t, err.Error(), `array_key "items" not found`)
-	assert.Contains(t, err.Error(), `Available keys: ["todos", "meta"]`)
+	assert.Contains(t, err.Error(), `Available keys: ["meta", "todos"]`) // Keys are now sorted
 }
 
 func TestGetArrayWrongType(t *testing.T) {
@@ -363,7 +363,8 @@ func TestReplaceNotFoundBareArray(t *testing.T) {
 }
 
 func TestFileReadError(t *testing.T) {
-	nonExistentFile := "/nonexistent/path/file.json"
+	// Use filepath.Join to create a definitely non-existent path under temp directory
+	nonExistentFile := filepath.Join(t.TempDir(), "nonexistent", "path", "file.json")
 
 	err := Append(nonExistentFile, "", map[string]interface{}{"test": true})
 	require.Error(t, err)

@@ -13,15 +13,5 @@
     "done": true,
     "id": "3",
     "title": "Ship the feature"
-  },
-  {
-    "done": false,
-    "id": "4",
-    "title": "Test wrapped mode"
-  },
-  {
-    "done": false,
-    "id": "4",
-    "title": "Test validation"
   }
 ]
