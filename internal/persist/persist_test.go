@@ -91,7 +91,7 @@ func TestReplaceBareArray(t *testing.T) {
 
 	alice := result[0].(map[string]interface{})
 	assert.Equal(t, "Alice Smith", alice["name"])
-	assert.Equal(t, float64(30), alice["age"]) // JSON numbers are float64
+	assert.Equal(t, float64(30), alice["age"]) // JSON spec: all numbers are floating-point
 	assert.Equal(t, "1", alice["id"])
 
 	// Verify Bob unchanged
@@ -191,6 +191,44 @@ func TestEmptyBareArray(t *testing.T) {
 	assert.Equal(t, "First", first["name"])
 }
 
+// === Edge Case Tests ===
+
+func TestReadArrayWithNull(t *testing.T) {
+	tmpFile := createTempArrayFile(t, `null`)
+
+	_, err := ReadArray(tmpFile)
+	require.Error(t, err)
+	assert.True(t, IsConfigError(err))
+	assert.Contains(t, err.Error(), "must contain a JSON array in bare-array mode, got null")
+}
+
+func TestReadArrayWithString(t *testing.T) {
+	tmpFile := createTempArrayFile(t, `"just a string"`)
+
+	_, err := ReadArray(tmpFile)
+	require.Error(t, err)
+	assert.True(t, IsConfigError(err))
+	assert.Contains(t, err.Error(), "must contain a JSON array in bare-array mode, got string")
+}
+
+func TestReadArrayWithNumber(t *testing.T) {
+	tmpFile := createTempArrayFile(t, `42`)
+
+	_, err := ReadArray(tmpFile)
+	require.Error(t, err)
+	assert.True(t, IsConfigError(err))
+	assert.Contains(t, err.Error(), "must contain a JSON array in bare-array mode, got number")
+}
+
+func TestReadArrayWithBoolean(t *testing.T) {
+	tmpFile := createTempArrayFile(t, `true`)
+
+	_, err := ReadArray(tmpFile)
+	require.Error(t, err)
+	assert.True(t, IsConfigError(err))
+	assert.Contains(t, err.Error(), "must contain a JSON array in bare-array mode, got boolean")
+}
+
 // === Validation Tests ===
 
 func TestValidationMismatchObjectWithoutArrayKey(t *testing.T) {
@@ -236,11 +274,10 @@ func TestDetectFileTypeObject(t *testing.T) {
 func TestDetectFileTypeInvalid(t *testing.T) {
 	tmpFile := createTempArrayFile(t, `"just a string"`)
 
-	_, fileType, err := readAndDetectStubFile(tmpFile)
-	require.Error(t, err)
+	content, fileType, err := readAndDetectStubFile(tmpFile)
+	require.NoError(t, err) // readAndDetectStubFile no longer errors for unknown types
 	assert.Equal(t, "unknown", fileType)
-	assert.True(t, IsConfigError(err))
-	assert.Contains(t, err.Error(), "must contain either a JSON array or object")
+	assert.Equal(t, "just a string", content) // Content should be parsed correctly
 }
 
 // === Backward Compatibility Tests ===

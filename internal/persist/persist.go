@@ -20,7 +20,7 @@ func Append(filePath, arrayKey string, incoming map[string]interface{}) error {
 	}
 
 	// Validate configuration matches file type
-	if err := validatePersistConfig(fileType, filePath, arrayKey); err != nil {
+	if err := validatePersistConfig(fileType, filePath, arrayKey, content); err != nil {
 		return err
 	}
 
@@ -51,7 +51,7 @@ func Replace(filePath, arrayKey, key, keyVal string, incoming map[string]interfa
 	}
 
 	// Validate configuration matches file type
-	if err := validatePersistConfig(fileType, filePath, arrayKey); err != nil {
+	if err := validatePersistConfig(fileType, filePath, arrayKey, content); err != nil {
 		return nil, err
 	}
 
@@ -110,7 +110,7 @@ func Delete(filePath, arrayKey, key, keyVal string) error {
 	}
 
 	// Validate configuration matches file type
-	if err := validatePersistConfig(fileType, filePath, arrayKey); err != nil {
+	if err := validatePersistConfig(fileType, filePath, arrayKey, content); err != nil {
 		return err
 	}
 
@@ -202,14 +202,18 @@ func readAndDetectStubFile(filePath string) (content interface{}, fileType strin
 	case map[string]interface{}:
 		return content, "object", nil
 	default:
-		return nil, "unknown", &ConfigError{
-			Msg: fmt.Sprintf("stub file %q must contain either a JSON array or object, got %T", filePath, content),
-		}
+		return content, "unknown", nil
 	}
 }
 
 // validatePersistConfig validates that file type matches the array_key configuration.
-func validatePersistConfig(fileType, filePath, arrayKey string) error {
+func validatePersistConfig(fileType, filePath, arrayKey string, content interface{}) error {
+	if fileType == "unknown" {
+		return &ConfigError{
+			Msg: fmt.Sprintf("stub file %q must contain either a JSON array or object, got %s", filePath, getJSONTypeName(content)),
+		}
+	}
+
 	if arrayKey == "" && fileType != "array" {
 		return &ConfigError{
 			Msg: fmt.Sprintf("stub file %q contains a JSON object but array_key is not specified. Either provide array_key to specify which field contains the array, or convert the file to a bare JSON array", filePath),
@@ -227,24 +231,24 @@ func validatePersistConfig(fileType, filePath, arrayKey string) error {
 
 // ReadArray reads a stub file as a bare JSON array.
 func ReadArray(filePath string) ([]interface{}, error) {
-	data, err := os.ReadFile(filePath)
+	content, fileType, err := readAndDetectStubFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("reading stub file %q: %w", filePath, err)
+		return nil, err
 	}
 
-	var arr []interface{}
-	if err := json.Unmarshal(data, &arr); err != nil {
-		// Try to provide helpful error if it's an object
-		var obj map[string]interface{}
-		if json.Unmarshal(data, &obj) == nil {
-			return nil, &ConfigError{
-				Msg: fmt.Sprintf("stub file %q contains a JSON object, but bare-array mode expects a JSON array. Either specify array_key in your config, or convert the file to format: [{...}, {...}]", filePath),
-			}
+	switch fileType {
+	case "array":
+		return content.([]interface{}), nil
+	case "object":
+		// Provide a helpful error if the stub is an object instead of a bare array.
+		return nil, &ConfigError{
+			Msg: fmt.Sprintf("stub file %q contains a JSON object, but bare-array mode expects a JSON array. Either specify array_key in your config, or convert the file to format: [{...}, {...}]", filePath),
 		}
-		return nil, fmt.Errorf("parsing stub file %q as array: %w", filePath, err)
+	default:
+		return nil, &ConfigError{
+			Msg: fmt.Sprintf("stub file %q must contain a JSON array in bare-array mode, got %s", filePath, getJSONTypeName(content)),
+		}
 	}
-
-	return arr, nil
 }
 
 // WriteArray writes a bare array back to file with proper formatting.
@@ -286,7 +290,7 @@ func getArray(root map[string]interface{}, arrayKey string) ([]interface{}, erro
 	arr, ok := raw.([]interface{})
 	if !ok {
 		return nil, &ConfigError{
-			Msg: fmt.Sprintf("field %q is not a JSON array (found %T). Ensure the field contains an array like: %q: [{...}, {...}]", arrayKey, raw, arrayKey),
+			Msg: fmt.Sprintf("field %q is not a JSON array (found %s). Ensure the field contains an array like: %q: [{...}, {...}]", arrayKey, getJSONTypeName(raw), arrayKey),
 		}
 	}
 
@@ -310,6 +314,27 @@ func joinKeys(keys []string) string {
 		result += key
 	}
 	return result
+}
+
+// getJSONTypeName returns the JSON type name for a Go value, suitable for user-friendly error messages.
+func getJSONTypeName(v interface{}) string {
+	if v == nil {
+		return "null"
+	}
+	switch v.(type) {
+	case bool:
+		return "boolean"
+	case float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return "number"
+	case string:
+		return "string"
+	case []interface{}:
+		return "array"
+	case map[string]interface{}:
+		return "object"
+	default:
+		return "unknown"
+	}
 }
 
 // NotFoundError is returned when replace/delete cannot locate the target record.
