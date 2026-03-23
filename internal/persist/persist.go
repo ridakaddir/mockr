@@ -232,19 +232,24 @@ func ReadArray(filePath string) ([]interface{}, error) {
 		return nil, fmt.Errorf("reading stub file %q: %w", filePath, err)
 	}
 
-	var arr []interface{}
-	if err := json.Unmarshal(data, &arr); err != nil {
-		// Try to provide helpful error if it's an object
-		var obj map[string]interface{}
-		if json.Unmarshal(data, &obj) == nil {
-			return nil, &ConfigError{
-				Msg: fmt.Sprintf("stub file %q contains a JSON object, but bare-array mode expects a JSON array. Either specify array_key in your config, or convert the file to format: [{...}, {...}]", filePath),
-			}
-		}
-		return nil, fmt.Errorf("parsing stub file %q as array: %w", filePath, err)
+	var content interface{}
+	if err := json.Unmarshal(data, &content); err != nil {
+		return nil, fmt.Errorf("parsing stub file %q: %w", filePath, err)
 	}
 
-	return arr, nil
+	switch v := content.(type) {
+	case []interface{}:
+		return v, nil
+	case map[string]interface{}:
+		// Provide a helpful error if the stub is an object instead of a bare array.
+		return nil, &ConfigError{
+			Msg: fmt.Sprintf("stub file %q contains a JSON object, but bare-array mode expects a JSON array. Either specify array_key in your config, or convert the file to format: [{...}, {...}]", filePath),
+		}
+	default:
+		return nil, &ConfigError{
+			Msg: fmt.Sprintf("stub file %q must contain a JSON array in bare-array mode, got %T", filePath, content),
+		}
+	}
 }
 
 // WriteArray writes a bare array back to file with proper formatting.
