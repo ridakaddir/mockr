@@ -7,15 +7,32 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 )
 
 // Append adds incoming to the array stored at root[arrayKey] and writes the
 // file back to disk.
 func Append(filePath, arrayKey string, incoming map[string]interface{}) error {
-	root, err := ReadStub(filePath)
+	// Read file once and determine type
+	content, fileType, err := readAndDetectStubFile(filePath)
 	if err != nil {
 		return err
 	}
+
+	// Validate configuration matches file type
+	if err := validatePersistConfig(fileType, filePath, arrayKey); err != nil {
+		return err
+	}
+
+	if arrayKey == "" {
+		// Bare-array mode: content is already a []interface{}
+		arr := content.([]interface{})
+		arr = append(arr, incoming)
+		return WriteArray(filePath, arr)
+	}
+
+	// Wrapped-object mode: content is a map[string]interface{}
+	root := content.(map[string]interface{})
 	arr, err := getArray(root, arrayKey)
 	if err != nil {
 		return err
@@ -27,10 +44,40 @@ func Append(filePath, arrayKey string, incoming map[string]interface{}) error {
 // Replace finds the record where record[key] == keyVal, merges incoming onto
 // it, writes the file back, and returns the updated record.
 func Replace(filePath, arrayKey, key, keyVal string, incoming map[string]interface{}) (map[string]interface{}, error) {
-	root, err := ReadStub(filePath)
+	// Read file once and determine type
+	content, fileType, err := readAndDetectStubFile(filePath)
 	if err != nil {
 		return nil, err
 	}
+
+	// Validate configuration matches file type
+	if err := validatePersistConfig(fileType, filePath, arrayKey); err != nil {
+		return nil, err
+	}
+
+	if arrayKey == "" {
+		// Bare-array mode: content is already a []interface{}
+		arr := content.([]interface{})
+
+		for i, item := range arr {
+			record, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if fmt.Sprintf("%v", record[key]) == keyVal {
+				for k, v := range incoming {
+					record[k] = v
+				}
+				arr[i] = record
+				return record, WriteArray(filePath, arr)
+			}
+		}
+
+		return nil, &NotFoundError{Key: key, Value: keyVal}
+	}
+
+	// Wrapped-object mode: content is a map[string]interface{}
+	root := content.(map[string]interface{})
 	arr, err := getArray(root, arrayKey)
 	if err != nil {
 		return nil, err
@@ -56,10 +103,41 @@ func Replace(filePath, arrayKey, key, keyVal string, incoming map[string]interfa
 
 // Delete removes the record where record[key] == keyVal and writes the file back.
 func Delete(filePath, arrayKey, key, keyVal string) error {
-	root, err := ReadStub(filePath)
+	// Read file once and determine type
+	content, fileType, err := readAndDetectStubFile(filePath)
 	if err != nil {
 		return err
 	}
+
+	// Validate configuration matches file type
+	if err := validatePersistConfig(fileType, filePath, arrayKey); err != nil {
+		return err
+	}
+
+	if arrayKey == "" {
+		// Bare-array mode: content is already a []interface{}
+		arr := content.([]interface{})
+
+		newArr := make([]interface{}, 0, len(arr))
+		found := false
+		for _, item := range arr {
+			record, ok := item.(map[string]interface{})
+			if ok && fmt.Sprintf("%v", record[key]) == keyVal {
+				found = true
+				continue
+			}
+			newArr = append(newArr, item)
+		}
+
+		if !found {
+			return &NotFoundError{Key: key, Value: keyVal}
+		}
+
+		return WriteArray(filePath, newArr)
+	}
+
+	// Wrapped-object mode: content is a map[string]interface{}
+	root := content.(map[string]interface{})
 	arr, err := getArray(root, arrayKey)
 	if err != nil {
 		return err
@@ -106,20 +184,132 @@ func WriteStub(filePath string, root map[string]interface{}) error {
 	return os.WriteFile(filePath, data, 0644)
 }
 
+// readAndDetectStubFile efficiently reads a stub file and returns both content and type information.
+func readAndDetectStubFile(filePath string) (content interface{}, fileType string, err error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, "", fmt.Errorf("reading stub file %q: %w", filePath, err)
+	}
+
+	// Parse as generic interface{} to detect type
+	if err := json.Unmarshal(data, &content); err != nil {
+		return nil, "", fmt.Errorf("parsing stub file %q: %w", filePath, err)
+	}
+
+	switch content.(type) {
+	case []interface{}:
+		return content, "array", nil
+	case map[string]interface{}:
+		return content, "object", nil
+	default:
+		return nil, "unknown", &ConfigError{
+			Msg: fmt.Sprintf("stub file %q must contain either a JSON array or object, got %T", filePath, content),
+		}
+	}
+}
+
+// validatePersistConfig validates that file type matches the array_key configuration.
+func validatePersistConfig(fileType, filePath, arrayKey string) error {
+	if arrayKey == "" && fileType != "array" {
+		return &ConfigError{
+			Msg: fmt.Sprintf("stub file %q contains a JSON object but array_key is not specified. Either provide array_key to specify which field contains the array, or convert the file to a bare JSON array", filePath),
+		}
+	}
+
+	if arrayKey != "" && fileType == "array" {
+		return &ConfigError{
+			Msg: fmt.Sprintf("stub file %q is a bare JSON array but array_key=%q is specified. Either remove array_key or wrap the array in an object like {%q: [...]}", filePath, arrayKey, arrayKey),
+		}
+	}
+
+	return nil
+}
+
+// ReadArray reads a stub file as a bare JSON array.
+func ReadArray(filePath string) ([]interface{}, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading stub file %q: %w", filePath, err)
+	}
+
+	var arr []interface{}
+	if err := json.Unmarshal(data, &arr); err != nil {
+		// Try to provide helpful error if it's an object
+		var obj map[string]interface{}
+		if json.Unmarshal(data, &obj) == nil {
+			return nil, &ConfigError{
+				Msg: fmt.Sprintf("stub file %q contains a JSON object, but bare-array mode expects a JSON array. Either specify array_key in your config, or convert the file to format: [{...}, {...}]", filePath),
+			}
+		}
+		return nil, fmt.Errorf("parsing stub file %q as array: %w", filePath, err)
+	}
+
+	return arr, nil
+}
+
+// WriteArray writes a bare array back to file with proper formatting.
+func WriteArray(filePath string, arr []interface{}) error {
+	data, err := json.MarshalIndent(arr, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshalling stub array: %w", err)
+	}
+	data = append(data, '\n')
+	return os.WriteFile(filePath, data, 0644)
+}
+
 // getArray returns the []interface{} at root[arrayKey].
 func getArray(root map[string]interface{}, arrayKey string) ([]interface{}, error) {
 	if arrayKey == "" {
-		return nil, &ConfigError{Msg: "array_key is required for persist operations"}
+		return nil, &ConfigError{
+			Msg: "array_key is required when stub file is a JSON object. For bare JSON arrays, omit array_key entirely",
+		}
 	}
+
 	raw, exists := root[arrayKey]
 	if !exists {
-		return nil, &ConfigError{Msg: fmt.Sprintf("array_key %q not found in stub file", arrayKey)}
+		keys := make([]string, 0, len(root))
+		for k := range root {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys) // Sort for deterministic error messages
+
+		quotedKeys := make([]string, len(keys))
+		for i, k := range keys {
+			quotedKeys[i] = fmt.Sprintf("%q", k)
+		}
+
+		return nil, &ConfigError{
+			Msg: fmt.Sprintf("array_key %q not found in stub file. Available keys: [%s]", arrayKey, joinKeys(quotedKeys)),
+		}
 	}
+
 	arr, ok := raw.([]interface{})
 	if !ok {
-		return nil, &ConfigError{Msg: fmt.Sprintf("array_key %q is not a JSON array", arrayKey)}
+		return nil, &ConfigError{
+			Msg: fmt.Sprintf("field %q is not a JSON array (found %T). Ensure the field contains an array like: %q: [{...}, {...}]", arrayKey, raw, arrayKey),
+		}
 	}
+
 	return arr, nil
+}
+
+// joinKeys joins a slice of strings with commas for error messages.
+func joinKeys(keys []string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	if len(keys) == 1 {
+		return keys[0]
+	}
+
+	result := ""
+	for i, key := range keys {
+		if i > 0 {
+			result += ", "
+		}
+		result += key
+	}
+	return result
 }
 
 // NotFoundError is returned when replace/delete cannot locate the target record.

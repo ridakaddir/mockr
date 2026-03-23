@@ -30,7 +30,7 @@
 - **Route-based mocking** — define routes with named response cases, switch between them by editing `fallback`
 - **Condition routing** — activate different cases based on request body fields, query params, or headers
 - **Dynamic file resolution** — serve `stubs/user-{query.username}-orders.json` resolved at request time
-- **Stateful mocks** — `POST`/`PUT`/`PATCH`/`DELETE` persist changes into stub files (append / replace / delete)
+- **Stateful mocks** — `POST`/`PUT`/`PATCH`/`DELETE` persist changes into stub files (append / replace / delete); supports both wrapped objects and bare arrays for API contract compatibility
 - **Directory config** — point `--config` at a folder and mockr loads and merges all config files in it
 - **Reverse proxy fallthrough** — unmatched routes forward to a real upstream API
 - **Hot reload** — edit any config file and changes apply on the next request, no restart needed
@@ -764,7 +764,13 @@ If the resolved file does not exist, mockr falls through to the next condition o
 
 When `persist: true`, mutating requests update the stub file on disk. Subsequent reads reflect the change.
 
-### `append` — add a record (POST)
+**Mockr supports two persist modes** to match different API response formats:
+
+### Wrapped Object Mode (Traditional)
+
+Use when your API returns objects containing arrays like `{"users": [...]}`:
+
+#### `append` — add a record (POST)
 
 ```toml
 [routes.cases.created]
@@ -772,10 +778,10 @@ status    = 201
 file      = "stubs/users.json"
 persist   = true
 merge     = "append"
-array_key = "users"
+array_key = "users"    # Required: specifies array field
 ```
 
-### `replace` — update a record (PUT / PATCH)
+#### `replace` — update a record (PUT / PATCH)
 
 ```toml
 [routes.cases.updated]
@@ -784,10 +790,10 @@ file      = "stubs/users.json"
 persist   = true
 merge     = "replace"
 key       = "id"
-array_key = "users"
+array_key = "users"    # Required: specifies array field
 ```
 
-### `delete` — remove a record (DELETE)
+#### `delete` — remove a record (DELETE)
 
 ```toml
 [routes.cases.deleted]
@@ -796,8 +802,105 @@ file      = "stubs/users.json"
 persist   = true
 merge     = "delete"
 key       = "id"
-array_key = "users"
+array_key = "users"    # Required: specifies array field
 ```
+
+**Stub file format:**
+```json
+{
+  "users": [
+    {"id": "1", "name": "Alice"}
+  ]
+}
+```
+
+### Bare Array Mode (New)
+
+Use when your API returns bare arrays like `[{...}, {...}]` for true API contract compatibility:
+
+#### `append` — add a record (POST)
+
+```toml
+[routes.cases.created]
+status  = 201
+file    = "stubs/users.json"
+persist = true
+merge   = "append"
+# array_key omitted — operates on bare array
+```
+
+#### `replace` — update a record (PUT / PATCH)
+
+```toml
+[routes.cases.updated]
+status  = 200
+file    = "stubs/users.json"
+persist = true
+merge   = "replace"
+key     = "id"
+# array_key omitted — operates on bare array
+```
+
+#### `delete` — remove a record (DELETE)
+
+```toml
+[routes.cases.deleted]
+status  = 204
+file    = "stubs/users.json"
+persist = true
+merge   = "delete"
+key     = "id"
+# array_key omitted — operates on bare array
+```
+
+**Stub file format:**
+```json
+[
+  {"id": "1", "name": "Alice"}
+]
+```
+
+### Configuration Validation
+
+Mockr validates that your configuration matches your stub file format:
+
+- **Wrapped mode** (with `array_key`): Stub file must be a JSON object
+- **Bare array mode** (without `array_key`): Stub file must be a JSON array
+
+**Common validation errors:**
+
+```bash
+# Mismatch: object file without array_key
+Error: stub file contains a JSON object but array_key is not specified.
+Fix: Add array_key = "users" or convert file to bare array format
+
+# Mismatch: array file with array_key  
+Error: stub file is a bare JSON array but array_key="users" is specified.
+Fix: Remove array_key or wrap array in object {"users": [...]}
+
+# Wrong field name
+Error: array_key "items" not found. Available keys: ["users", "metadata"]
+Fix: Use correct field name or check stub file structure
+```
+
+### When to Use Each Mode
+
+**Use Wrapped Object Mode when:**
+- Your real API returns `{"data": [...], "meta": {...}}`
+- You need multiple fields in responses
+- Working with existing wrapped configurations
+
+**Use Bare Array Mode when:**  
+- Your real API returns bare arrays: `[{}, {}]`
+- You want exact API contract compatibility
+- Building standard REST APIs
+- You prefer simpler stub file management
+
+### Examples
+
+- **Wrapped Object**: See `examples/persist/` 
+- **Bare Array**: See `examples/bare-array-persist/`
+- **Side-by-side comparison**: See `examples/persist-comparison/`
 
 **Key resolution order for `replace`/`delete`:** path wildcard → request body → query param.
 
@@ -1045,7 +1148,9 @@ mockr --config examples/<name>
 |---|---|
 | `examples/basic` | Static stubs, named cases, hot reload |
 | `examples/conditions` | Body / query / header condition routing |
-| `examples/persist` | Stateful CRUD backed by stub files |
+| `examples/persist` | Stateful CRUD backed by stub files (wrapped object mode) |
+| `examples/bare-array-persist` | Stateful CRUD with bare array mode for API contract compatibility |
+| `examples/persist-comparison` | Side-by-side comparison of wrapped vs bare array persist modes |
 | `examples/dynamic-files` | `{source.field}` file path placeholders |
 | `examples/full-crud` | All features combined — blog posts API |
 | `examples/record-mode` | Proxy + auto-record workflow |
