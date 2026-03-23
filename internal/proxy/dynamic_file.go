@@ -40,7 +40,21 @@ func hasDynamicPlaceholders(filePath string) bool {
 }
 
 // sanitizePathSegment strips characters that are unsafe in file names.
+// Importantly, it prevents directory traversal by replacing . and .. with safe alternatives.
 func sanitizePathSegment(s string) string {
+	// First, handle exact directory traversal attempts
+	if s == "." || s == ".." {
+		return "_"
+	}
+
+	// Strip unsafe characters, but preserve dots for normal file extensions
 	unsafe := regexp.MustCompile(`[^a-zA-Z0-9_\-.]`)
-	return unsafe.ReplaceAllString(s, "_")
+	sanitized := unsafe.ReplaceAllString(s, "_")
+
+	// Prevent leading dots which could create hidden files or relative paths
+	if strings.HasPrefix(sanitized, ".") {
+		sanitized = "_" + sanitized[1:]
+	}
+
+	return sanitized
 }

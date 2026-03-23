@@ -100,16 +100,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
+		// Clone request with stripped path for consistent path-based extractions
+		requestForExtraction := r
+		if h.apiPrefix != "" && strings.HasPrefix(r.URL.Path, h.apiPrefix) {
+			requestForExtraction = r.Clone(r.Context())
+			requestForExtraction.URL.Path = matchPath_
+			if requestForExtraction.URL.RawPath != "" {
+				requestForExtraction.URL.RawPath = matchPath_
+			}
+		}
+
 		// Persist (mutating methods).
 		if c.Persist {
-			if handled := applyPersist(w, r, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams); handled {
+			if handled := applyPersist(w, requestForExtraction, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams); handled {
 				return
 			}
 		}
 
 		// Serve mock response into a buffer so we can inspect it first.
 		rec := newResponseRecorder(w)
-		serveMock(rec, r, c, bodyBytes, h.loader.ConfigDir(), route.Match, pathParams)
+		serveMock(rec, requestForExtraction, c, bodyBytes, h.loader.ConfigDir(), route.Match, pathParams)
 
 		// If the dynamic file was missing, try next condition / fallback / proxy.
 		if isFileMissing(rec) {

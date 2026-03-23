@@ -103,63 +103,62 @@ func extractNamedParams(pattern, path string) (map[string]string, bool) {
 	patternParts := strings.Split(strings.Trim(pattern, "/"), "/")
 	pathParts := strings.Split(strings.Trim(path, "/"), "/")
 
+	// Use recursive matching to handle wildcards followed by named params correctly
 	params := make(map[string]string)
-	pathIndex := 0
-
-	for i, patternPart := range patternParts {
-		// Handle empty parts (from leading/trailing slashes)
-		if patternPart == "" {
-			continue
-		}
-
-		// Check if we've consumed all path parts
-		if pathIndex >= len(pathParts) {
-			return nil, false
-		}
-
-		if strings.HasPrefix(patternPart, "{") && strings.HasSuffix(patternPart, "}") {
-			// Named parameter: extract name and capture value
-			paramName := patternPart[1 : len(patternPart)-1]
-			if paramName == "" {
-				return nil, false // Invalid empty parameter name
-			}
-			params[paramName] = pathParts[pathIndex]
-			pathIndex++
-		} else if patternPart == "*" {
-			// Wildcard: consume one or more segments
-			if i == len(patternParts)-1 {
-				// * at end: consume all remaining segments
-				pathIndex = len(pathParts)
-			} else {
-				// * in middle: consume until next literal segment matches
-				nextPattern := patternParts[i+1]
-				found := false
-				for pathIndex < len(pathParts) {
-					if pathParts[pathIndex] == nextPattern {
-						found = true
-						break
-					}
-					pathIndex++
-				}
-				if !found {
-					return nil, false
-				}
-			}
-		} else {
-			// Literal segment: must match exactly
-			if pathParts[pathIndex] != patternPart {
-				return nil, false
-			}
-			pathIndex++
-		}
-	}
-
-	// Ensure all path segments were consumed
-	if pathIndex != len(pathParts) {
+	matched := matchSegments(patternParts, pathParts, 0, 0, params)
+	if !matched {
 		return nil, false
 	}
 
 	return params, true
+}
+
+// matchSegments recursively matches pattern segments against path segments.
+// This handles complex cases like wildcards followed by named parameters.
+func matchSegments(patternParts, pathParts []string, patternIndex, pathIndex int, params map[string]string) bool {
+	// Skip empty pattern parts (from leading/trailing slashes)
+	for patternIndex < len(patternParts) && patternParts[patternIndex] == "" {
+		patternIndex++
+	}
+
+	// If we've consumed all pattern parts, we must have consumed all path parts
+	if patternIndex >= len(patternParts) {
+		return pathIndex >= len(pathParts)
+	}
+
+	// If we've run out of path parts but still have pattern parts, fail
+	if pathIndex >= len(pathParts) {
+		return false
+	}
+
+	patternPart := patternParts[patternIndex]
+
+	if strings.HasPrefix(patternPart, "{") && strings.HasSuffix(patternPart, "}") {
+		// Named parameter: matches exactly one segment
+		paramName := patternPart[1 : len(patternPart)-1]
+		if paramName == "" {
+			return false // Invalid empty parameter name
+		}
+		params[paramName] = pathParts[pathIndex]
+		return matchSegments(patternParts, pathParts, patternIndex+1, pathIndex+1, params)
+
+	} else if patternPart == "*" {
+		// Wildcard: must consume at least one segment, try consuming 1, 2, 3... segments
+		for consumed := 1; pathIndex+consumed <= len(pathParts); consumed++ {
+			// Try matching the rest of the pattern after consuming 'consumed' segments
+			if matchSegments(patternParts, pathParts, patternIndex+1, pathIndex+consumed, params) {
+				return true
+			}
+		}
+		return false
+
+	} else {
+		// Literal segment: must match exactly
+		if pathParts[pathIndex] != patternPart {
+			return false
+		}
+		return matchSegments(patternParts, pathParts, patternIndex+1, pathIndex+1, params)
+	}
 }
 
 // matchWithNamedParams performs path matching and returns both the match result

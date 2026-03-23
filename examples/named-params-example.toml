@@ -7,11 +7,13 @@ fallback = "success"
   status = 200
   json = '''
   {
-    "environment": "{envId}",
-    "endpoint": "{endpointId}",
-    "message": "Named parameters working!"
+    "message": "Named parameters working!",
+    "timestamp": "{{timestamp}}"
   }
   '''
+  # Note: Named params {envId} and {endpointId} are extracted and available
+  # for persistence key resolution and dynamic file paths, but not currently
+  # supported in JSON response templating
 
 [[routes]]
 method = "POST"
@@ -49,8 +51,7 @@ fallback = "mixed_success"
   status = 200
   json = '''
   {
-    "environment": "{envId}",
-    "endpoint": "{endpointId}",
-    "message": "Mixed wildcard and named parameters working!"
+    "message": "Mixed wildcard and named parameters working!",
+    "timestamp": "{{timestamp}}"
   }
   '''

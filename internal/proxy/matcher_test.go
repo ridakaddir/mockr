@@ -67,6 +67,26 @@ func TestExtractNamedParams(t *testing.T) {
 			wantParams: map[string]string{"userId": "123"},
 			wantMatch:  true,
 		},
+		// Test wildcard followed by named parameter (reported by Copilot)
+		{
+			pattern:    "/api/*/{userId}",
+			path:       "/api/v1/123",
+			wantParams: map[string]string{"userId": "123"},
+			wantMatch:  true,
+		},
+		{
+			pattern:    "/api/*/{userId}/posts/{postId}",
+			path:       "/api/v1/v2/123/posts/456",
+			wantParams: map[string]string{"userId": "123", "postId": "456"},
+			wantMatch:  true,
+		},
+		// Test multiple wildcards
+		{
+			pattern:    "/api/*/*/{userId}",
+			path:       "/api/v1/staging/123",
+			wantParams: map[string]string{"userId": "123"},
+			wantMatch:  true,
+		},
 		// No named params in pattern
 		{
 			pattern:    "/api/users",

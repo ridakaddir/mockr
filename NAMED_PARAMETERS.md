@@ -37,7 +37,9 @@ fallback = "success"
 
   [routes.cases.success]
   status = 200
-  json = '{"userId": "{{userId}}", "message": "User found"}'
+  json = '{"message": "User found"}'
+  # Note: Named params are available for persistence/conditions/dynamic files,
+  # but not currently supported in response JSON templating
 ```
 
 ### Mixed Wildcards and Named Parameters  
@@ -76,13 +78,25 @@ fallback = "user_profile"
   file = "stubs/user-{path.userId}-profile.json"  # Dynamic file selection
 ```
 
+## Security Features
+
+### Path Traversal Protection
+Dynamic file resolution includes security measures to prevent directory traversal attacks:
+- Directory traversal patterns (`.`, `..`) are neutralized to `_`
+- Leading dots in filenames are replaced to prevent hidden file creation
+- File paths are sanitized to remove unsafe characters
+
+### API Prefix Consistency  
+When using `--api-prefix`, the system ensures consistent path handling between route matching and parameter extraction by using the same stripped path for all operations.
+
 ## Implementation Details
 
 ### Files Modified
 
 1. **`internal/proxy/matcher.go`** - Core matching logic
    - `hasNamedParams()` - Check for `{name}` syntax
-   - `extractNamedParams()` - Extract parameter values using segment matching
+   - `extractNamedParams()` - Extract parameter values using recursive segment matching
+   - `matchSegments()` - Recursive algorithm handling complex wildcard + named param patterns
    - `matchWithNamedParams()` - Unified matching with parameter extraction
    - Updated `matchPath()` to route to named parameter logic
 
@@ -99,6 +113,7 @@ fallback = "user_profile"
 
 5. **`internal/proxy/dynamic_file.go`** - Dynamic file resolution
    - Updated `resolveDynamicFile()` to support named path parameters
+   - Enhanced `sanitizePathSegment()` with security improvements
 
 6. **`internal/proxy/mock.go`** - Mock response generation
    - Updated `serveMock()` to pass path parameters for dynamic file resolution
@@ -107,13 +122,16 @@ fallback = "user_profile"
 
 - **Unit Tests**: Comprehensive coverage of all new functions
   - Parameter detection, extraction, and matching
+  - Complex wildcard + named parameter patterns  
   - Edge cases, error conditions, backward compatibility
   - Key resolution priority and fallback behavior
+  - Security: Directory traversal prevention
 
 - **Integration Tests**: End-to-end functionality validation  
   - Route matching with named parameters
   - Persistence operations using extracted parameters
   - Dynamic file path resolution
+  - API prefix handling consistency
 
 ## Backward Compatibility
 
