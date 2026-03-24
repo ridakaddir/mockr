@@ -29,6 +29,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
+const { pipeline } = require("stream/promises");
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -103,14 +104,16 @@ function sha256(filePath) {
 }
 
 /**
- * Downloads a file from a URL, following redirects (HTTPS only).
+ * Sends an HTTPS GET and follows redirects, returning the final response stream.
+ * - Caps redirect hops at MAX_REDIRECTS
+ * - Refuses non-HTTPS redirects to prevent downgrade attacks
+ * - Intentionally does NOT forward Authorization header on redirects
  */
-function download(url, dest) {
+function fetchWithRedirects(url) {
   return new Promise((resolve, reject) => {
     let redirectCount = 0;
 
     const handleResponse = (res) => {
-      // Follow redirects (GitHub releases redirect to S3)
       if (
         res.statusCode >= 300 &&
         res.statusCode < 400 &&
@@ -124,7 +127,6 @@ function download(url, dest) {
 
         const redirectUrl = res.headers.location;
 
-        // Only follow HTTPS redirects to prevent downgrade attacks
         if (!redirectUrl.startsWith("https://")) {
           res.resume();
           reject(
@@ -148,15 +150,12 @@ function download(url, dest) {
       }
 
       if (res.statusCode !== 200) {
-        res.resume(); // Drain the response to free up the socket
+        res.resume();
         reject(new Error(`Download failed: HTTP ${res.statusCode} for ${url}`));
         return;
       }
 
-      const file = fs.createWriteStream(dest);
-      res.pipe(file);
-      file.on("finish", () => resolve());
-      file.on("error", reject);
+      resolve(res);
     };
 
     const headers = { "User-Agent": "mockr-npm-publish" };
@@ -166,6 +165,27 @@ function download(url, dest) {
 
     https.get(url, { headers }, handleResponse).on("error", reject);
   });
+}
+
+/**
+ * Downloads a file from a URL, following redirects (HTTPS only).
+ *
+ * Uses stream.pipeline to ensure the file handle is always closed,
+ * response abort/error events are handled, and partially-written
+ * files are cleaned up on failure.
+ */
+async function download(url, dest) {
+  const res = await fetchWithRedirects(url);
+
+  try {
+    await pipeline(res, fs.createWriteStream(dest));
+  } catch (err) {
+    // Clean up partially-written file on failure
+    try {
+      fs.unlinkSync(dest);
+    } catch {}
+    throw err;
+  }
 }
 
 /**
