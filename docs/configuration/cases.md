@@ -16,7 +16,7 @@ Cases are named response definitions attached to a route. Each route can have mu
 | `delay` | int | `0` | Seconds to wait before responding |
 | `persist` | bool | `false` | Mutate the stub file/directory on disk |
 | `merge` | string | — | `update`, `append`, or `delete` (requires `persist: true`) |
-| `key` | string | — | Field name for filename when using `append` with directories |
+| `key` | string | — | Field name for filename when using `append` with directories (resolved from body, path params, or query — see [directory stubs](../features/directory-stubs.md#key-resolution-for-filenames)) |
 | `defaults` | string | — | JSON file with default values for `append`/`update` operations |
 
 ---

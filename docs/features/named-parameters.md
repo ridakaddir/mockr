@@ -81,31 +81,37 @@ file = "stubs/env-{path.envId}/endpoint-{path.endpointId}.json"
 
 ## Persistence with named parameters
 
-Named path parameters have the **highest priority** in key resolution for persistence operations:
+Named path parameters work as a fallback for key resolution in `merge = "append"` operations. When the request body doesn't contain the `key` field, mockr resolves it from the URL path:
 
 ```toml
 [[routes]]
-method   = "PUT"
-match    = "/api/users/{userId}/posts/{postId}"
+method   = "POST"
+match    = "/api/v1/*/environments/*/endpoint/{endpointId}/publication"
 enabled  = true
-fallback = "update_post"
+fallback = "published"
 
-  [routes.cases.update_post]
-  status  = 200
-  file    = "stubs/posts.json"
-  persist = true
-  merge   = "replace"
-  key     = "postId"    # resolved from {postId} in the URL path
+  [routes.cases.published]
+  status   = 201
+  file     = "stubs/publications/"
+  persist  = true
+  merge    = "append"
+  key      = "endpointId"    # resolved from {endpointId} in the URL path
 ```
+
+A `POST` to `/api/v1/org123/environments/env456/endpoint/6053b5e4-cdbf-40c0-a6c8-cb41f29fe6bf/publication` with body `{"subDomain": "gemma"}` creates `stubs/publications/6053b5e4-cdbf-40c0-a6c8-cb41f29fe6bf.json` — the `endpointId` value is extracted from the path and used as both the filename and injected into the saved record.
 
 ### Key resolution priority
 
-When using persistence operations, key values are resolved in this order:
+When using `merge = "append"`, the filename is determined by the `key` field value, resolved in this order:
 
-1. **Named path parameters** — `{userId}`, `{postId}` from the URL path
-2. **Path wildcards** — existing `*` behaviour (fallback)
-3. **Request body fields** — JSON field extraction
-4. **Query parameters** — URL query parameters
+1. **Request body** — if the body contains the `key` field, that value is used
+2. **Defaults** — if a `defaults` file provides the `key` field (e.g. via `{{uuid}}`), that value is used
+3. **Named path parameters** — `{endpointId}`, `{postId}` from the URL path
+4. **Path wildcards (single `*`)** — for patterns with a single `*`, the first wildcard match may be used as the key; patterns with multiple `*` are not guaranteed to produce a stable filename key
+5. **Query parameters** — URL query parameters
+6. **Auto-generated UUID** — if none of the above provide a value
+
+> **Note:** Defaults are deep-merged into the request body before key resolution runs. If your `defaults` file sets the `key` field (e.g. `"userId": "{{uuid}}"`), that value will be used as the filename even when a named path parameter could provide one. To use path parameter keys with defaults, ensure the defaults file does **not** include the `key` field.
 
 ---
 
