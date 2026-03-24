@@ -1,0 +1,14 @@
+# Native binaries — downloaded at publish time, not committed
+darwin-arm64/bin/mockr
+darwin-x64/bin/mockr
+linux-x64/bin/mockr
+linux-arm64/bin/mockr
+win32-x64/bin/mockr.exe
+win32-arm64/bin/mockr.exe
+
+# Temporary download directory
+.tmp/
+
+# npm artifacts
+node_modules/
+*.tgz

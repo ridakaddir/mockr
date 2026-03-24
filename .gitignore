@@ -1,6 +1,6 @@
-# Binaries
-mockr
-mokr
+# Binaries (Go build output at project root)
+/mockr
+/mokr
 *.exe
 *.exe~
 *.dll

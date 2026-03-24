@@ -1,0 +1,14 @@
+{
+  "name": "@ridakaddir/mockr-darwin-x64",
+  "version": "0.1.0",
+  "description": "mockr native binary for macOS x64 (Intel)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ridakaddir/mockr.git"
+  },
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/mockr"],
+  "preferUnplugged": true
+}

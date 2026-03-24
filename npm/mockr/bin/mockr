@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+
+"use strict";
+
+const { execFileSync } = require("child_process");
+
+/**
+ * Platform-specific package mapping.
+ *
+ * Maps Node.js process.platform + process.arch to the corresponding
+ * @mockr/* npm package that contains the native binary.
+ */
+const PLATFORMS = {
+  "darwin arm64": "@ridakaddir/mockr-darwin-arm64",
+  "darwin x64": "@ridakaddir/mockr-darwin-x64",
+  "linux x64": "@ridakaddir/mockr-linux-x64",
+  "linux arm64": "@ridakaddir/mockr-linux-arm64",
+  "win32 x64": "@ridakaddir/mockr-win32-x64",
+  "win32 arm64": "@ridakaddir/mockr-win32-arm64",
+};
+
+/**
+ * Resolves the path to the native mockr binary for the current platform.
+ */
+function getBinaryPath() {
+  const platformKey = `${process.platform} ${process.arch}`;
+  const pkg = PLATFORMS[platformKey];
+
+  if (!pkg) {
+    const supported = Object.entries(PLATFORMS)
+      .map(([key, name]) => `  ${key} -> ${name}`)
+      .join("\n");
+
+    console.error(
+      `Error: Unsupported platform: ${process.platform} ${process.arch}\n\n` +
+        `mockr currently supports:\n${supported}\n\n` +
+        `If you need support for this platform, please open an issue:\n` +
+        `https://github.com/ridakaddir/mockr/issues`
+    );
+    process.exit(1);
+  }
+
+  // Determine the binary name (mockr.exe on Windows, mockr elsewhere)
+  const binaryName = process.platform === "win32" ? "mockr.exe" : "mockr";
+
+  try {
+    // Resolve the binary from the platform-specific package
+    return require.resolve(`${pkg}/bin/${binaryName}`);
+  } catch (e) {
+    // Build a platform-appropriate fallback install instruction
+    let fallback;
+    if (process.platform === "win32") {
+      fallback =
+        `  Download the latest release from:\n` +
+        `  https://github.com/ridakaddir/mockr/releases/latest`;
+    } else {
+      const os = process.platform === "darwin" ? "darwin" : "linux";
+      const arch = process.arch === "x64" ? "amd64" : process.arch;
+      fallback =
+        `  curl -L https://github.com/ridakaddir/mockr/releases/latest/download/mockr_${os}_${arch}.tar.gz | tar xz\n` +
+        `  sudo mv mockr /usr/local/bin/`;
+    }
+
+    console.error(
+      `Error: The platform-specific package ${pkg} is not installed.\n\n` +
+        `This usually means your package manager failed to install the\n` +
+        `optional dependency for your platform (${process.platform} ${process.arch}).\n\n` +
+        `Try reinstalling:\n` +
+        `  npm install -D @ridakaddir/mockr\n\n` +
+        `If the problem persists, you can install mockr directly:\n` +
+        fallback
+    );
+    process.exit(1);
+  }
+}
+
+// Resolve binary and run it, forwarding all arguments and stdio
+const binaryPath = getBinaryPath();
+
+try {
+  execFileSync(binaryPath, process.argv.slice(2), {
+    stdio: "inherit",
+    env: process.env,
+  });
+} catch (e) {
+  // execFileSync throws on non-zero exit codes; forward the exit code
+  if (e.status !== null && e.status !== undefined) {
+    process.exit(e.status);
+  }
+
+  // If the child was killed by a signal (e.g., SIGTERM, SIGINT),
+  // re-signal ourselves so the parent process sees the correct exit reason
+  if (e.signal) {
+    process.kill(process.pid, e.signal);
+    return;
+  }
+
+  // If the binary couldn't be executed at all, report the error
+  console.error(`Error: Failed to execute mockr binary at ${binaryPath}`);
+  console.error(e.message);
+  process.exit(1);
+}
