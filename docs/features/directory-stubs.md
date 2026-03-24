@@ -113,10 +113,13 @@ fallback = "deleted"
 When `merge = "append"`, the `key` field determines the filename. mockr resolves the value using this fallback chain:
 
 1. **Request body** — if the body contains the `key` field, that value is used as the filename
-2. **Named path parameters** — if the route uses `{paramName}` and the param name matches `key`, the URL value is used
-3. **Path wildcards** — the first `*` match from the URL path
-4. **Query parameters** — URL query parameter matching the `key` name
-5. **Auto-generated UUID** — if none of the above provide a value
+2. **Defaults** — if a `defaults` file provides the `key` field (e.g. via `{{uuid}}`), that value is used
+3. **Named path parameters** — if the route uses `{paramName}` and the param name matches `key`, the URL value is used
+4. **Path wildcards** — for patterns containing a single `*`, the matched segment from the URL path is used as the value
+5. **Query parameters** — URL query parameter matching the `key` name
+6. **Auto-generated UUID** — if none of the above provide a value
+
+> **Note:** Defaults are deep-merged into the request body *before* key resolution runs. A `defaults` file that sets the `key` field will therefore take precedence over path, wildcard, and query fallbacks, but will still be overridden by an explicit `key` in the request body. Wildcard-based key extraction is only reliable for routes with a single `*` in the pattern.
 
 ### Example: key from the request body
 
