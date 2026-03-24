@@ -23,1468 +23,150 @@
   Switch between response scenarios by editing a config file — changes apply instantly with no restart.
 </p>
 
+<p align="center">
+  <a href="docs/README.md"><strong>Full Documentation</strong></a>
+</p>
+
 ---
 
 ## Features
 
-- **Route-based mocking** — define routes with named response cases, switch between them by editing `fallback`
-- **Named path parameters** — extract values from URLs with `{name}` syntax for key resolution and dynamic files
-- **Condition routing** — activate different cases based on request body fields, query params, headers, or path parameters
-- **Dynamic file resolution** — serve `stubs/user-{query.username}-orders.json` or `stubs/user-{path.userId}-profile.json` resolved at request time
-- **Directory-based stub storage** — each resource stored as separate JSON files; `GET` lists aggregate directories, `POST`/`PATCH`/`DELETE` operate on individual files
-- **Persist defaults** — enrich `append`/`update` operations with server-generated fields (`status`, `createTime`, `{{uuid}}`) from a defaults JSON file; request body always wins on conflicts
-- **Directory config** — point `--config` at a folder and mockr loads and merges all config files in it
+- **Route-based mocking** — define routes with named response cases and condition routing
+- **gRPC mock & proxy** — mock unary gRPC methods from `.proto` files; no `protoc` or codegen required
+- **Named path parameters** — `{name}` syntax for path extraction, dynamic files, and persistence
+- **Directory-based stubs** — CRUD operations with one JSON file per resource
 - **Reverse proxy fallthrough** — unmatched routes forward to a real upstream API
-- **Hot reload** — edit any config file and changes apply on the next request, no restart needed
-- **Record mode** — proxy a real API, save responses as stub files, replay with matching latency
-- **API prefix stripping** — `--api-prefix /api` strips the prefix before matching routes and forwarding upstream
-- **CORS** — all responses include CORS headers automatically
-- **Response templating** — `{{uuid}}`, `{{now}}`, `{{timestamp}}` in inline JSON values
+- **Hot reload** — edit config files and see changes on the next request
+- **Record mode** — proxy a real API, save responses as stubs, replay offline
+- **OpenAPI generation** — generate a complete mock from any OpenAPI 3 spec
+- **Response transitions** — time-based state progression (e.g. `shipped` → `delivered`)
 - **Multi-format config** — TOML, YAML, or JSON — auto-detected by file extension
-- **OpenAPI generation** — generate a complete mockr config from any OpenAPI 3 spec (file or URL)
-- **Response transitions** — automatically advance through a sequence of cases over time (e.g. `shipped` → `out_for_delivery` → `delivered`, with `shipped` → `out_for_delivery` after 30s)
-- **gRPC mock** — mock unary gRPC methods from `.proto` files; stub responses with protojson; no `protoc` or codegen required
-- **gRPC proxy** — forward unmatched gRPC methods transparently to an upstream server (h2c)
-- **gRPC conditions** — route gRPC calls to different cases based on request body fields, using the same condition operators as REST
-- **gRPC persist** — stateful CRUD: `update` / `append` / `delete` operations on directory-based stub files, same as REST persist
-- **gRPC generate** — `mockr generate --proto` scaffolds `[[grpc_routes]]` config and stub JSON files from a `.proto` file
-- **gRPC reflection** — built-in server reflection so `grpcurl` and `grpc-ui` work out of the box
-
----
-
-## 📖 Additional Documentation
-
-- **[`NAMED_PARAMETERS.md`](NAMED_PARAMETERS.md)** — Detailed implementation guide for named path parameters
-- **[`examples/README.md`](examples/README.md)** — Complete examples with `grpcurl` commands
-- **[`LICENSE`](LICENSE)** — MIT license terms
 
 ---
 
 ## Install
 
-**Install with npm** (recommended for frontend projects):
-
 ```sh
 npm install -D @ridakaddir/mockr
 ```
 
-This registers the `mockr` command in your project. Use it via `npx` or in `package.json` scripts:
-
-```sh
-npx mockr --init
-```
-
-**Download a binary** from the [latest release](https://github.com/ridakaddir/mockr/releases):
-
-```sh
-# macOS Apple Silicon
-curl -L https://github.com/ridakaddir/mockr/releases/latest/download/mockr_darwin_arm64.tar.gz | tar xz
-sudo mv mockr /usr/local/bin/
-
-# macOS Intel
-curl -L https://github.com/ridakaddir/mockr/releases/latest/download/mockr_darwin_amd64.tar.gz | tar xz
-sudo mv mockr /usr/local/bin/
-
-# Linux x86-64
-curl -L https://github.com/ridakaddir/mockr/releases/latest/download/mockr_linux_amd64.tar.gz | tar xz
-sudo mv mockr /usr/local/bin/
-```
-
-**Install with Go:**
-
-```sh
-go install github.com/ridakaddir/mockr@latest
-```
-
-**Build from source:**
-
-```sh
-git clone https://github.com/ridakaddir/mockr.git
-cd mockr
-task build          # requires Task — see Development section
-# or
-go build -o mockr .
-```
+Or download a binary from the [latest release](https://github.com/ridakaddir/mockr/releases). See the [installation guide](docs/installation.md) for all options.
 
 ---
 
-## Quick start
+## Quick Start
 
-**HTTP — from an OpenAPI spec:**
+**From an OpenAPI spec:**
 
 ```sh
 mockr generate --spec openapi.yaml --out ./mocks
 mockr --config ./mocks
 ```
 
-**HTTP — scaffold a config manually:**
+**Manual scaffold:**
 
 ```sh
 mockr --init
 mockr --target https://api.example.com
 ```
 
-Your frontend points at `http://localhost:4000`. Matched routes return mock responses. Everything else proxies to `--target`.
-
-**gRPC — from a `.proto` file:**
+**gRPC:**
 
 ```sh
-# Generate config + stubs from a proto
 mockr generate --proto service.proto --out ./mocks
-
-# Start both HTTP (port 4000) and gRPC (port 50051) servers
 mockr --config ./mocks --grpc-proto service.proto
 ```
 
-Inspect with `grpcurl`:
-
-```sh
-grpcurl -plaintext localhost:50051 list
-grpcurl -plaintext -d '{"user_id":"1"}' localhost:50051 users.UserService/GetUser
-```
+See the [quick start guide](docs/quick-start.md) for more details.
 
 ---
 
-## CLI reference
+## CLI Reference
 
 ```
 mockr [flags]
 
 Flags:
   -t, --target        <url>    Upstream HTTP API to proxy unmatched requests to
-  -p, --port          <n>      HTTP port to listen on (default: 4000)
-  -c, --config        <path>   Config file or directory
-                               (default: mockr.toml if present, else current directory)
-  -a, --api-prefix    <path>   Strip this prefix before matching routes and forwarding
-                               upstream (e.g. /api)
-      --init                   Scaffold a mockr.toml template in the current directory
-      --record                 Record mode: proxy all requests and save responses as stubs
-
-  # gRPC flags (gRPC server starts only when --grpc-proto is provided)
-      --grpc-proto    <file>   Path to a .proto file; repeat for multiple files
-      --grpc-port     <n>      gRPC server port (default: 50051)
-      --grpc-target   <addr>   Upstream gRPC server for proxy mode (e.g. localhost:9090)
-
+  -p, --port          <n>      HTTP port (default: 4000)
+  -c, --config        <path>   Config file or directory (default: mockr.toml)
+  -a, --api-prefix    <path>   Strip prefix before matching (e.g. /api)
+      --init                   Scaffold a mockr.toml template
+      --record                 Record mode: proxy and save responses as stubs
+      --grpc-proto    <file>   Path to .proto file (starts gRPC server)
+      --grpc-port     <n>      gRPC port (default: 50051)
+      --grpc-target   <addr>   Upstream gRPC server for proxy mode
   -h, --help
   -v, --version
 
 Subcommands:
-  generate    Generate a mockr config from an OpenAPI spec or .proto files
+  generate    Generate config from OpenAPI spec or .proto files
 ```
+
+See the [full CLI reference](docs/cli-reference.md) for all flags and usage patterns.
 
 ---
 
-## Generate
+## Documentation
 
-Generate a complete mockr config directory from an OpenAPI 3 spec in one command. Works with local files and remote URLs.
+Full usage documentation lives in the [`docs/`](docs/README.md) directory:
 
-```sh
-# From a local file
-mockr generate --spec openapi.yaml --out ./mocks
-
-# From a remote URL
-mockr generate --spec https://petstore3.swagger.io/api/v3/openapi.json --out ./mocks
-
-# YAML format, single file instead of one per tag
-mockr generate --spec openapi.yaml --format yaml --split=false
-```
-
-Then serve immediately — no editing required:
-
-```sh
-mockr --config ./mocks
-```
-
-### What is generated
-
-For each path + operation in the spec:
-
-- One config file per tag (e.g. `users.toml`, `orders.toml`) containing one route per operation
-- One stub JSON file per response status code in `stubs/`
-- OpenAPI path parameters (`{id}`) are converted to mockr wildcards (`*`)
-- The first 2xx response is set as the route `fallback`
-
-**Example output for the Petstore spec:**
-
-```
-mocks/
-├── pet.toml        # 13 routes
-├── store.toml      #  3 routes
-├── user.toml       #  3 routes
-└── stubs/
-    ├── get_pet_petId_200.json
-    ├── get_pet_findByStatus_200.json
-    ├── post_pet_200.json
-    └── ... (42 more)
-```
-
-**Generated config file (`pet.toml`):**
-
-```toml
-# Generated from openapi.yaml
-# Tag: pet
-
-# Returns pets based on status
-[[routes]]
-method   = "GET"
-match    = "/pet/findByStatus"
-enabled  = true
-fallback = "success"
-
-  [routes.cases.success]
-  status = 200
-  file   = "stubs/get_pet_findByStatus_200.json"
-
-  [routes.cases.bad_request]
-  status = 400
-  file   = "stubs/get_pet_findByStatus_400.json"
-```
-
-### Stub quality
-
-Stubs are populated in priority order:
-
-| Priority | Source | Description |
-|---|---|---|
-| 1 | Spec `examples` | Used verbatim when present in the spec |
-| 2 | Schema `example` / `default` / `enum` | First value used |
-| 3 | Schema synthesis | Objects built from properties, arrays of one item, strings with format hints |
-
-Format hints in synthesised stubs:
-
-| Schema format | Synthesised value |
+| Section | Description |
 |---|---|
-| `uuid` | `"{{uuid}}"` — rendered as a real UUID at request time |
-| `date-time` | `"{{now}}"` — rendered as RFC3339 timestamp at request time |
-| `date` | `"2026-01-01"` |
-| `email` | `"user@example.com"` |
-| `uri` | `"https://example.com"` |
-
-### `generate` flags
-
-```
-mockr generate [flags]
-
-OpenAPI flags:
-  -s, --spec          <file|url>   OpenAPI spec file path or URL
-  -o, --out           <dir>        Output directory for config and stubs  (default: mocks)
-  -f, --format        <fmt>        Config format: toml, yaml, json        (default: toml)
-      --split                      One file per tag; --split=false for a single file (default: true)
-
-Proto flags:
-      --proto         <file>       Path to a .proto file; repeat for multiple files
-      --import-path   <dir>        Extra directory to search for proto imports; repeat for multiple
-```
-
-Either `--spec` or `--proto` is required. `--proto` takes precedence if both are provided.
-
-### Using Task
-
-```sh
-task generate SPEC=openapi.yaml
-task generate SPEC=https://petstore3.swagger.io/api/v3/openapi.json
-task generate SPEC=openapi.yaml OUT=./petstore
-```
+| [Installation](docs/installation.md) | npm, binary, `go install`, build from source |
+| [Quick Start](docs/quick-start.md) | Get running in under a minute |
+| [CLI Reference](docs/cli-reference.md) | All flags and subcommands |
+| [Configuration](docs/configuration/README.md) | Config files, routes, cases, formats |
+| [Features](docs/features/README.md) | Conditions, persistence, transitions, recording, and more |
+| [gRPC](docs/grpc/README.md) | gRPC mocking, proxy, persistence, generation |
+| [OpenAPI](docs/openapi/README.md) | Generate mocks from OpenAPI 3 specs |
+| [Examples](docs/examples.md) | Runnable examples for every feature |
 
 ---
 
-## gRPC
-
-mockr supports gRPC mock and proxy alongside the HTTP server — both run in the same process, activated by `--grpc-proto`.
-
-### How it works
-
-1. Provide one or more `.proto` files via `--grpc-proto` — no `protoc` or code generation required
-2. Define `[[grpc_routes]]` in your config files alongside existing `[[routes]]`
-3. mockr starts a gRPC server on `--grpc-port` (default 50051) and an HTTP server on `--port` (default 4000)
-4. Incoming gRPC calls are matched by full method path, decoded from protobuf to JSON for condition evaluation, and the stub response is encoded back to protobuf wire format
-5. Unmatched calls are forwarded to `--grpc-target` if set, or return `UNIMPLEMENTED`
-
-### Quick start
-
-```sh
-# Generate config and stubs from a proto file
-mockr generate --proto service.proto --out ./mocks
-
-# Start (HTTP + gRPC)
-mockr --config ./mocks --grpc-proto service.proto
-
-# With upstream proxy for unmatched methods
-mockr --config ./mocks \
-      --grpc-proto service.proto \
-      --grpc-target localhost:9090
-```
-
-### gRPC config — `[[grpc_routes]]`
-
-gRPC routes live in the same config files as HTTP routes. All existing features work: conditions, transitions, fallback, delay, and template tokens.
-
-```toml
-[[grpc_routes]]
-match    = "/users.UserService/GetUser"
-enabled  = true
-fallback = "ok"
-
-  # Condition on a request body field (snake_case or camelCase both work)
-  [[grpc_routes.conditions]]
-  source = "body"
-  field  = "user_id"
-  op     = "eq"
-  value  = "999"
-  case   = "not_found"
-
-  [grpc_routes.cases.ok]
-  status = 0   # gRPC OK
-  file   = "stubs/get_user.json"
-
-  [grpc_routes.cases.not_found]
-  status = 5   # gRPC NOT_FOUND
-  json   = '{"message": "user not found"}'
-
-  [grpc_routes.cases.error]
-  status = 13  # gRPC INTERNAL
-  json   = '{"message": "internal server error"}'
-  delay  = 1
-```
-
-#### `match` format
-
-The `match` field is the full gRPC method path: `"/package.Service/Method"`. All three matching styles work:
-
-```toml
-match = "/users.UserService/GetUser"   # exact
-match = "/users.UserService/*"         # wildcard — all methods in the service
-match = "~/users\\..*Service/.*"       # regex (prefix with ~)
-```
-
-#### gRPC status codes
-
-`Case.status` is a [gRPC status code](https://grpc.github.io/grpc/core/md_doc_statuscodes.html) integer. Common values:
-
-| Code | Name | Meaning |
-|---|---|---|
-| `0` | OK | Success (default when status is omitted) |
-| `1` | CANCELLED | Request cancelled |
-| `2` | UNKNOWN | Unknown error |
-| `3` | INVALID_ARGUMENT | Bad input |
-| `4` | DEADLINE_EXCEEDED | Timeout |
-| `5` | NOT_FOUND | Resource not found |
-| `6` | ALREADY_EXISTS | Resource already exists |
-| `7` | PERMISSION_DENIED | Authorisation failure |
-| `9` | FAILED_PRECONDITION | Operation rejected (e.g. already shipped) |
-| `13` | INTERNAL | Server error |
-| `14` | UNAVAILABLE | Service temporarily unavailable |
-| `16` | UNAUTHENTICATED | Missing or invalid credentials |
-
-#### Stub file format
-
-Stub files and inline `json = "..."` values use [protojson](https://protobuf.dev/programming-guides/proto3/#json) — JSON with field names matching the proto field names (camelCase by default).
-
-```json
-{
-  "userId": "usr_1a2b3c4d",
-  "name": "Alice Smith",
-  "email": "alice@example.com",
-  "active": true
-}
-```
-
-Template tokens (`{{uuid}}`, `{{now}}`, `{{timestamp}}`) work in gRPC stubs exactly as they do in REST:
-
-```toml
-[grpc_routes.cases.ok]
-status = 0
-json   = '{"userId": "{{uuid}}", "createdAt": "{{now}}"}'
-```
-
-#### Conditions on gRPC requests
-
-Conditions evaluate fields from the decoded request message. Use `source = "body"` and dot-notation field paths. Both the proto field name (`payment_type`) and its camelCase equivalent (`paymentType`) are accepted automatically:
-
-```toml
-[[grpc_routes.conditions]]
-source = "body"
-field  = "payment_type"   # snake_case or camelCase both work
-op     = "eq"
-value  = "crypto"
-case   = "pending_review"
-
-[[grpc_routes.conditions]]
-source = "body"
-field  = "user.address.country"  # nested field, dot-notation
-op     = "eq"
-value  = "EU"
-case   = "eu_response"
-```
-
-All condition operators work: `eq`, `neq`, `contains`, `regex`, `exists`, `not_exists`.
-
-> Note: `source = "query"` and `source = "header"` are not applicable to gRPC and are ignored.
-
-#### Proxy fallthrough
-
-When a gRPC route has no matching condition and no `fallback`, mockr forwards the call to `--grpc-target`. This lets you stub only the methods you care about:
-
-```toml
-# ListProducts is mocked for electronics only; all other categories are proxied
-[[grpc_routes]]
-match   = "/products.ProductService/ListProducts"
-enabled = true
-# No fallback — unmatched conditions go to --grpc-target
-
-  [[grpc_routes.conditions]]
-  source = "body"
-  field  = "category"
-  op     = "eq"
-  value  = "electronics"
-  case   = "electronics"
-
-  [grpc_routes.cases.electronics]
-  status = 0
-  file   = "stubs/products_electronics.json"
-
-# UpdateProduct is not defined at all — always proxied to --grpc-target
-```
-
-#### Directory-based persist
-
-gRPC routes support the same directory-based persistence as HTTP routes. Each resource is stored as a separate JSON file.
-
-```toml
-# Create item - append to directory
-[[grpc_routes]]
-match    = "/items.ItemService/CreateItem"
-enabled  = true
-fallback = "created"
-
-  [grpc_routes.cases.created]
-  status   = 0
-  file     = "stubs/items/"     # Directory path
-  persist  = true
-  merge    = "append"
-  key      = "itemId"           # Field used as filename; auto-generated if missing
-  defaults = "stubs/defaults/item.json"  # Server-generated fields ({{uuid}}, {{now}})
-
-# List items - directory aggregation  
-[[grpc_routes]]
-match    = "/items.ItemService/ListItems"
-enabled  = true
-fallback = "list"
-
-  [grpc_routes.cases.list]
-  file = "stubs/items/"       # Returns array of all .json files
-
-# Get item - single file read
-[[grpc_routes]]
-match    = "/items.ItemService/GetItem"
-enabled  = true
-fallback = "item"
-
-  [grpc_routes.cases.item]
-  file = "stubs/items/{body.itemId}.json"  # Dynamic filename from request
-
-# Update item - shallow merge into existing file
-[[grpc_routes]]
-match    = "/items.ItemService/UpdateItem" 
-enabled  = true
-fallback = "updated"
-
-  [grpc_routes.cases.updated]
-  status  = 0
-  file    = "stubs/items/{body.itemId}.json"
-  persist = true
-  merge   = "update"          # Shallow merge
-
-# Delete item - remove file
-[[grpc_routes]]
-match    = "/items.ItemService/DeleteItem"
-enabled  = true
-fallback = "deleted"
-
-  [grpc_routes.cases.deleted]
-  status  = 0
-  file    = "stubs/items/{body.itemId}.json"
-  persist = true
-  merge   = "delete"          # Remove file
-```
-
-**Field name mapping:** Both snake_case (`item_id`) and camelCase (`itemId`) field names in protobuf requests are matched against `key` automatically.
-
-**Error codes:**
-
-| Situation | gRPC code |
-|---|---|
-| File/record not found | `5` NOT_FOUND |
-| Directory required for append | `3` INVALID_ARGUMENT |
-| File read/write error | `13` INTERNAL |
-
-**Response body:** All persist operations return an empty proto response (`{}`). The gRPC status code signals success or failure.
-
-**Example:** See `examples/grpc-directory-persist/` for a complete working example.
-
-#### Transitions
-
-Time-based transitions work identically to REST. The gRPC route key is the `match` pattern:
-
-```toml
-[[grpc_routes]]
-match    = "/orders.OrderService/GetOrder"
-enabled  = true
-fallback = "processing"
-
-  [[grpc_routes.transitions]]
-  case  = "processing"
-  after = 10
-
-  [[grpc_routes.transitions]]
-  case  = "shipped"
-  after = 60
-
-  [[grpc_routes.transitions]]
-  case  = "delivered"
-
-  [grpc_routes.cases.processing]
-  status = 0
-  json   = '{"status": "processing"}'
-
-  [grpc_routes.cases.shipped]
-  status = 0
-  json   = '{"status": "shipped"}'
-
-  [grpc_routes.cases.delivered]
-  status = 0
-  json   = '{"status": "delivered"}'
-```
-
-### `generate --proto`
-
-Scaffold a complete `[[grpc_routes]]` config and synthetic stub files from a `.proto` file in one command:
-
-```sh
-mockr generate --proto service.proto --out ./mocks
-
-# Multiple proto files
-mockr generate --proto users.proto --proto orders.proto --out ./mocks
-
-# With extra import paths for proto imports
-mockr generate --proto service.proto --import-path ./vendor/protos --format yaml
-```
-
-**Generated output for a `UserService` with three methods:**
-
-```
-mocks/
-├── mockr.toml            # [[grpc_routes]] for all methods
-└── stubs/
-    ├── UserService_GetUser.json
-    ├── UserService_ListUsers.json
-    └── UserService_CreateUser.json
-```
-
-Stubs are synthesised from the output message descriptor — field names, types and common naming patterns are used to produce sensible placeholder values:
-
-| Field name pattern | Synthesised value |
-|---|---|
-| contains `id` | `"{{uuid}}"` |
-| contains `email` | `"user@example.com"` |
-| contains `url` / `uri` | `"https://example.com"` |
-| contains `time` / `at` / `date` | `"{{now}}"` |
-| contains `name` | `"Example Name"` |
-| `bool` type | `true` |
-| `int32` / `int64` etc. | `1` |
-| `float` / `double` | `1.0` |
-
-Then start the server immediately:
-
-```sh
-mockr --config ./mocks --grpc-proto service.proto
-```
-
-### gRPC reflection
-
-mockr registers [gRPC server reflection](https://grpc.github.io/grpc/core/md_doc_server_reflection_tutorial.html) automatically. This means `grpcurl`, `grpc-ui`, and other tools can discover your services without a separate proto file:
-
-```sh
-# List all services
-grpcurl -plaintext localhost:50051 list
-
-# Describe a service
-grpcurl -plaintext localhost:50051 describe users.UserService
-
-# Describe a message
-grpcurl -plaintext localhost:50051 describe users.GetUserRequest
-
-# Call without specifying proto (reflection provides the schema)
-grpcurl -plaintext -d '{"user_id":"1"}' localhost:50051 users.UserService/GetUser
-```
-
----
-
-## Config file
-
-mockr supports `.toml`, `.yaml`/`.yml`, and `.json` — auto-detected by extension.
-
-### Minimal example
-
-```toml
-[[routes]]
-method   = "GET"
-match    = "/api/users"
-enabled  = true
-fallback = "success"
-
-  [routes.cases.success]
-  status = 200
-  file   = "stubs/users.json"
-
-  [routes.cases.empty]
-  status = 200
-  json   = '{"users": []}'
-
-  [routes.cases.error]
-  status = 500
-  json   = '{"message": "Internal Server Error"}'
-  delay  = 2
-```
-
----
-
-## Directory config
-
-Point `--config` at a folder and mockr loads **all** config files in it, merging their routes in alphabetical order. Hot reload watches the whole directory — adding, editing, or removing any file takes effect immediately.
-
-```sh
-mockr --config ./mocks
-```
-
-Split routes by domain for clarity:
-
-```
-mocks/
-├── auth.toml       # /auth/*
-├── users.toml      # /users/*
-├── products.toml   # /products/*
-└── orders.toml     # /orders/*
-```
-
-Mix formats freely — TOML, YAML, and JSON can coexist in the same directory.
-
-**Auto-detect:** if `--config` is not set, mockr looks for `mockr.toml` in the current directory and falls back to loading all config files in `.` if none is found.
-
----
-
-## Route fields
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `method` | string | — | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS` |
-| `match` | string | — | Path pattern (see [Path matching](#path-matching)) |
-| `enabled` | bool | `true` | Whether the route is active |
-| `fallback` | string | — | Case to serve when no condition matches; omit to proxy |
-| `conditions` | array | — | Ordered list of conditions (see [Conditions](#conditions)) |
-| `cases` | map | — | Named response definitions (see [Cases](#cases)) |
-
----
-
-## Cases
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `status` | int | `200` | HTTP status code — or gRPC status code for `[[grpc_routes]]` (e.g. `0` = OK, `5` = NOT_FOUND) |
-| `json` | string | — | Inline JSON body (supports [template tokens](#template-tokens)) |
-| `file` | string | — | Stub file path (supports [dynamic resolution](#dynamic-file-resolution)) |
-| `delay` | int | `0` | Seconds to wait before responding |
-| `persist` | bool | `false` | Mutate the stub file/directory on disk |
-| `merge` | string | — | `update`, `append`, or `delete` (requires `persist: true`) |
-| `key` | string | — | Field name for filename when using `append` with directories |
-| `defaults` | string | — | JSON file with default values; deep-merged under request body before `append`/`update` (supports [template tokens](#template-tokens) and [dynamic paths](#dynamic-file-resolution)) |
-
----
-
-## Path matching
-
-```toml
-# Exact
-match = "/api/users"
-
-# Wildcard — * matches any segment(s)
-match = "/api/users/*"
-match = "/api/*/orders"
-
-# Regex — prefix with ~
-match = "~^/api/users/\\d+$"
-```
-
----
-
-## Conditions
-
-Conditions are evaluated top-to-bottom. The first passing condition activates its case. If none match, `fallback` is used.
-
-```toml
-[[routes]]
-method   = "POST"
-match    = "/api/orders"
-enabled  = true
-fallback = "default"
-
-  [[routes.conditions]]
-  source = "body"        # body | query | header
-  field  = "user.type"  # dot-notation for nested body fields
-  op     = "eq"         # eq | neq | contains | regex | exists | not_exists
-  value  = "vip"
-  case   = "vip_response"
-
-  [[routes.conditions]]
-  source = "query"
-  field  = "version"
-  op     = "eq"
-  value  = "v2"
-  case   = "v2_response"
-
-  [[routes.conditions]]
-  source = "header"
-  field  = "X-User-Role"
-  op     = "eq"
-  value  = "admin"
-  case   = "admin_response"
-
-  [routes.cases.vip_response]
-  status = 200
-  json   = '{"discount": 0.3}'
-
-  [routes.cases.v2_response]
-  status = 200
-  json   = '{"version": "v2"}'
-
-  [routes.cases.admin_response]
-  status = 200
-  json   = '{"scope": "admin"}'
-
-  [routes.cases.default]
-  status = 200
-  json   = '{"discount": 0.0}'
-```
-
-### Condition operators
-
-| Op | Description |
-|---|---|
-| `eq` | Exact match |
-| `neq` | Not equal |
-| `contains` | String contains |
-| `regex` | Regular expression match |
-| `exists` | Field is present |
-| `not_exists` | Field is absent |
-
----
-
-## Dynamic file resolution
-
-Use `{source.field}` placeholders in `file` paths — resolved from the request at runtime.
-
-```toml
-[routes.cases.user_orders]
-status = 200
-file   = "stubs/user-{query.username}-orders.json"
-```
-
-| Placeholder | Resolves from |
-|---|---|
-| `{query.username}` | `?username=john` → `stubs/user-john-orders.json` |
-| `{body.user.id}` | JSON body field `user.id` |
-| `{header.X-User-Id}` | Request header `X-User-Id` |
-
-If the resolved file does not exist, mockr falls through to the next condition or `fallback` — no 500 error.
-
----
-
-## Named Path Parameters
-
-mockr supports `{name}` placeholders in route patterns to extract and use named path parameters for key resolution, conditions, and dynamic file paths.
-
-### Syntax
-
-Use curly braces to define named parameters that match exactly one path segment:
-
-```toml
-[[routes]]
-method   = "GET"
-match    = "/api/users/{userId}"
-enabled  = true
-fallback = "success"
-```
-
-### Mixed Patterns
-
-Named parameters can coexist with wildcard `*` patterns in the same route:
-
-```toml
-[[routes]]
-method   = "GET"
-match    = "/api/v1/*/environments/{envId}/endpoint/{endpointId}"
-enabled  = true
-fallback = "success"
-```
-
-### Dynamic File Resolution with Named Parameters
-
-Use `{path.paramName}` placeholders in file paths to create user-specific or resource-specific stub files:
-
-```toml
-[[routes]]
-method   = "GET"
-match    = "/api/users/{userId}/profile"
-enabled  = true
-fallback = "user_profile"
-
-  [routes.cases.user_profile]
-  status = 200
-  file   = "stubs/user-{path.userId}-profile.json"
-```
-
-**Request:** `GET /api/users/john123/profile`
-**Resolves to:** `stubs/user-john123-profile.json`
-
-### Persistence with Named Parameters
-
-Named path parameters have the **highest priority** in key resolution for persistence operations:
-
-```toml
-[[routes]]
-method   = "PUT"
-match    = "/api/users/{userId}/posts/{postId}"
-enabled  = true
-fallback = "update_post"
-
-  [routes.cases.update_post]
-  status = 200
-  file   = "stubs/posts.json"
-  persist = true
-  merge   = "replace"
-  key     = "postId"  # Extracted from {postId} in URL path
-  array_key = "posts"
-```
-
-### Key Resolution Priority
-
-When using persistence operations, key values are resolved in this order:
-
-1. **Named path parameters** — `{userId}`, `{postId}` from the URL path
-2. **Path wildcards** — existing `*` behavior (fallback)
-3. **Request body fields** — JSON field extraction
-4. **Query parameters** — URL query parameters
-
-### Conditions with Named Parameters
-
-Named path parameters can be used in conditions via the `path` source:
-
-```toml
-[[routes]]
-method   = "GET"
-match    = "/api/users/{userId}/orders"
-enabled  = true
-fallback = "default"
-
-  [[routes.conditions]]
-  source = "path"
-  field  = "userId"
-  op     = "eq"
-  value  = "vip-user"
-  case   = "vip_orders"
-
-  [routes.cases.vip_orders]
-  status = 200
-  file   = "stubs/vip-orders.json"
-
-  [routes.cases.default]
-  status = 200
-  file   = "stubs/regular-orders.json"
-```
-
-### Security Features
-
-Named parameter file resolution includes built-in security protections:
-
-- **Path traversal prevention** — `.` and `..` patterns are neutralized
-- **Hidden file protection** — leading dots in filenames are replaced
-- **Character sanitization** — unsafe characters are removed from file paths
-
-### Backward Compatibility
-
-Named path parameters are **100% backward compatible**:
-
-- All existing route patterns continue to work unchanged
-- Existing wildcard `*` behavior is preserved
-- No breaking changes to configuration format
-- Routes without named parameters use existing fast paths
-
-For detailed implementation information, see [`NAMED_PARAMETERS.md`](NAMED_PARAMETERS.md).
-
----
-
-## Directory-Based Stub Storage
-
-When `persist: true`, mutating requests operate on individual JSON files stored in directories. Each resource is a separate file, enabling a "single source of truth" convention.
-
-### How It Works
-
-**Directory Structure:**
-```
-stubs/
-└── users/
-    ├── 1.json     # {"userId": "1", "name": "Alice", ...}
-    ├── 2.json     # {"userId": "2", "name": "Bob", ...}
-    └── 3.json     # {"userId": "3", "name": "Charlie", ...}
-```
-
-**API Operations:**
-- **GET list**: Aggregates all `.json` files in directory into an array
-- **GET detail**: Reads single file by ID
-- **POST create**: Creates new file (auto-generates UUID if ID missing)
-- **PATCH update**: Shallow-merges request body into existing file  
-- **DELETE**: Removes file from disk
-
-### Configuration
-
-#### `append` — Create resource (POST)
-
-```toml
-[routes.cases.created]
-status  = 201
-file    = "stubs/users/"    # Directory path (trailing /)
-persist = true
-merge   = "append"
-key     = "userId"          # Field used as filename; auto-generated if missing
-```
-
-#### `update` — Update resource (PATCH/PUT)
-
-```toml
-[routes.cases.updated]
-file    = "stubs/users/{path.userId}.json"  # Single file path
-persist = true
-merge   = "update"    # Shallow merge into existing file
-```
-
-#### `delete` — Remove resource (DELETE)
-
-```toml
-[routes.cases.deleted]
-status  = 204
-file    = "stubs/users/{path.userId}.json"
-persist = true
-merge   = "delete"    # Remove file from disk
-```
-
-#### Directory aggregation (GET list)
-
-```toml
-[routes.cases.list]
-file = "stubs/users/"    # Directory path - returns array of all files
-```
-
-#### Single file read (GET detail)
-
-```toml
-[routes.cases.user]
-file = "stubs/users/{path.userId}.json"  # Dynamic filename from path
-```
-
-### Auto-ID Generation
-
-When `merge = "append"` and the request body is missing the `key` field:
-
-```bash
-# POST without userId
-curl -X POST /users -d '{"name": "New User"}'
-
-# Creates file: stubs/users/123e4567-e89b-12d3-a456-426614174000.json
-# Response: {"userId": "123e4567-e89b-12d3-a456-426614174000", "name": "New User"}
-```
-
-### Defaults for Append/Update
-
-When a `POST` creates a resource, the client typically sends only a subset of fields. Real APIs enrich the response with server-generated fields like `status`, `createTime`, or an auto-generated ID. The `defaults` field lets you define these:
-
-**Defaults file** (`stubs/defaults/user.json`):
-
-```json
-{
-  "userId": "{{uuid}}",
-  "role": "user",
-  "active": true,
-  "createdAt": "{{now}}"
-}
-```
-
-**Config:**
-
-```toml
-# POST /users - create with defaults
-[routes.cases.created]
-status   = 201
-file     = "stubs/users/"
-persist  = true
-merge    = "append"
-key      = "userId"
-defaults = "stubs/defaults/user.json"
-```
-
-**How it works:**
-
-1. mockr reads the defaults file and resolves template tokens (`{{uuid}}` → real UUID, `{{now}}` → timestamp)
-2. Deep-merges: defaults as the base, request body overlaid on top — **body always wins on conflicts**
-3. The merged result is saved to disk and returned as the response
-
-```bash
-# POST with just name and email
-curl -X POST /users -d '{"name": "Alice", "email": "alice@example.com"}'
-
-# Response (and saved file) includes defaults:
-# {
-#   "userId": "a1b2c3d4-...",
-#   "name": "Alice",
-#   "email": "alice@example.com",
-#   "role": "user",
-#   "active": true,
-#   "createdAt": "2026-03-24T10:30:00Z"
-# }
-```
-
-**Works with `update` too** — enrich PATCH requests with default fields:
-
-```toml
-[routes.cases.updated]
-file     = "stubs/users/{path.userId}.json"
-persist  = true
-merge    = "update"
-defaults = "stubs/defaults/user-update.json"
-```
-
-**Defaults path supports dynamic placeholders:**
-
-```toml
-defaults = "stubs/defaults/{path.resourceType}.json"
-```
-
-**Error handling:** If the defaults file is missing or contains invalid JSON, mockr logs a warning and proceeds with the original request body (no failure).
-
-### Nested Subdirectories
-
-Support sub-resources with nested directories:
-
-```
-stubs/
-├── deployments/
-│   ├── endpoint-123/
-│   │   ├── deploy-1.json
-│   │   └── deploy-2.json
-│   └── endpoint-456/
-│       └── deploy-3.json
-```
-
-```toml
-# GET /endpoints/{endpointId}/deployments
-[routes.cases.list_deployments]  
-file = "stubs/deployments/{path.endpointId}/"
-
-# POST /endpoints/{endpointId}/deployments
-[routes.cases.create_deployment]
-file     = "stubs/deployments/{path.endpointId}/"
-persist  = true
-merge    = "append"
-key      = "deploymentId"
-defaults = "stubs/defaults/deployment.json"
-```
-
-### Benefits
-
-- **Single source of truth**: Each resource is one file
-- **Version control friendly**: Clean diffs per resource
-- **No size limits**: Unlimited scalability vs. single-file arrays  
-- **Intuitive structure**: File layout mirrors API structure
-- **Atomic operations**: Each resource operation is independent
-
-### Example
-
-See `examples/directory-stubs/` for a complete working example with:
-- User listing (directory aggregation)
-- User creation (with/without auto-ID)
-- User retrieval, updates, and deletion
-
----
-
-## Template tokens
-
-| Token | Output |
-|---|---|
-| `{{uuid}}` | Random UUID v4 |
-| `{{now}}` | RFC3339 timestamp (`2026-03-21T00:00:00Z`) |
-| `{{timestamp}}` | Unix epoch in milliseconds |
-
-```toml
-[routes.cases.created]
-status = 201
-json   = '{"id": "{{uuid}}", "created_at": "{{now}}", "ts": {{timestamp}}}'
-```
-
----
-
-## Response transitions
-
-Automatically advance through a sequence of response cases over time. The timer starts on the **first request** to the route and resets whenever the config is hot-reloaded.
-
-```toml
-[[routes]]
-method   = "GET"
-match    = "/orders/*"
-enabled  = true
-fallback = "shipped"
-
-  [[routes.transitions]]
-  case  = "shipped"
-  after = 30          # seconds from first request → advance to next
-
-  [[routes.transitions]]
-  case  = "out_for_delivery"
-  after = 90          # seconds from first request → advance to next
-
-  [[routes.transitions]]
-  case  = "delivered"
-  # no after — terminal state, stays here permanently
-
-  [routes.cases.shipped]
-  status = 200
-  json   = '{"number": "o123", "status": "shipped"}'
-
-  [routes.cases.out_for_delivery]
-  status = 200
-  json   = '{"number": "o123", "status": "out_for_delivery"}'
-
-  [routes.cases.delivered]
-  status = 200
-  json   = '{"number": "o123", "status": "delivered"}'
-```
-
-### Timeline
-
-```
-t = 0s   first request  → shipped
-t = 30s  next request   → out_for_delivery
-t = 90s  next request   → delivered  (terminal — stays here)
-```
-
-The `after` values are cumulative from the first request, not from the previous transition.
-
-### `transitions` fields
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `case` | string | yes | Case key to serve during this stage |
-| `after` | int | no | Seconds from first request before advancing. Omit on the last entry to make it terminal |
-
-### Behaviour notes
-
-- **Conditions take priority** — if the route also has `conditions`, they are evaluated first. Transitions only activate when no condition matches
-- **Shared timeline per route pattern** — all requests to `GET /orders/*` share one clock regardless of the specific id (`/orders/123` and `/orders/456` advance together)
-- **Hot reload resets** — editing the config file restarts the sequence from the beginning
-- **No looping** — transitions are one-way; the last entry without `after` is the terminal state
-
-### YAML equivalent
-
-```yaml
-routes:
-  - method: GET
-    match: /orders/*
-    enabled: true
-    fallback: shipped
-    transitions:
-      - case: shipped
-        after: 30
-      - case: out_for_delivery
-        after: 90
-      - case: delivered
-    cases:
-      shipped:
-        status: 200
-        json: '{"number": "o123", "status": "shipped"}'
-      out_for_delivery:
-        status: 200
-        json: '{"number": "o123", "status": "out_for_delivery"}'
-      delivered:
-        status: 200
-        json: '{"number": "o123", "status": "delivered"}'
-```
-
----
-
-## API prefix
-
-Use `--api-prefix` when your frontend calls `/api/*` but the real upstream uses bare paths (`/users`, `/posts`).
-
-```sh
-mockr --target https://api.example.com --api-prefix /api
-```
-
-mockr accepts requests at `/api/*`, strips `/api`, matches routes and forwards upstream using the stripped path. Route definitions always use the **stripped** path:
-
-```toml
-[[routes]]
-method   = "GET"
-match    = "/users"      # not /api/users
-enabled  = true
-fallback = "success"
-```
-
----
-
-## Record mode
-
-Record mode proxies all requests to the real API, saves each response as a stub file, and immediately starts serving the stub on subsequent requests. The recorded latency is saved as the `delay` field so stubs replay at realistic speed.
-
-```sh
-mockr --config ./mocks \
-      --target https://api.example.com \
-      --api-prefix /api \
-      --record
-```
-
-Each new path is recorded once:
-
-```
-Request 1  →  via=proxy   (real network, e.g. 73ms)
-              → stubs/get_users_1.json saved
-              → route appended to mocks/recorded.toml
-Request 2  →  via=stub    (local file, <1ms)
-```
-
-Serve offline after recording (no `--target`, no `--record`):
-
-```sh
-mockr --config ./mocks --api-prefix /api
-```
-
----
-
-## Hot reload
-
-mockr watches the config file or directory for changes. Edit a case, change a `fallback`, or drop a new `.toml` file into the config directory — the next request picks up the changes with no restart.
-
-```
-via=stub   — response served from a local mock file
-via=proxy  — response forwarded to the upstream API
-```
-
----
-
-## YAML config example
-
-```yaml
-routes:
-  - method: GET
-    match: /api/users
-    enabled: true
-    fallback: success
-    cases:
-      success:
-        status: 200
-        file: stubs/users.json
-      empty:
-        status: 200
-        json: '{"users": []}'
-
-  - method: POST
-    match: /api/users
-    enabled: true
-    fallback: created
-    conditions:
-      - source: body
-        field: role
-        op: eq
-        value: admin
-        case: admin_created
-    cases:
-      admin_created:
-        status: 201
-        json: '{"id": "{{uuid}}", "role": "admin"}'
-      created:
-        status: 201
-        file: stubs/users.json
-        persist: true
-        merge: append
-        array_key: users
-```
-
----
-
-## JSON config example
-
-```json
-{
-  "routes": [
-    {
-      "method": "GET",
-      "match": "/api/users",
-      "enabled": true,
-      "fallback": "success",
-      "cases": {
-        "success": { "status": 200, "file": "stubs/users.json" },
-        "empty":   { "status": 200, "json": "{\"users\": []}" }
-      }
-    }
-  ]
-}
-```
-
----
-
-## Examples
-
-The `examples/` directory contains runnable examples for each feature. Each example is a directory — run with:
-
-```sh
-mockr --config examples/<name>
-```
-
-| Example | What it demonstrates |
-|---|---|
-| `examples/basic` | Static stubs, named cases, hot reload |
-| `examples/conditions` | Body / query / header condition routing |
-| `examples/directory-stubs` | Directory-based CRUD — each resource as separate JSON file |
-| `examples/dynamic-files` | `{source.field}` file path placeholders and named path parameters |
-| `examples/transitions` | Time-based response transitions and state progression |
-| `examples/record-mode` | Proxy + auto-record workflow |
-| `examples/openapi-generate` | Generate config from OpenAPI spec (Petstore example) |
-| `examples/grpc-mock` | gRPC unary mock — named cases, error codes, template tokens |
-| `examples/grpc-conditions` | gRPC condition routing on request body fields |
-| `examples/grpc-proxy` | gRPC selective mock + transparent upstream proxy fallthrough |
-| `examples/grpc-directory-persist` | gRPC directory-based CRUD — same as directory-stubs but for gRPC |
-
-**Additional example files:**
-- `named-params-example.toml` — Standalone named path parameters demonstration
-- `dynamic-files-example.toml` — Dynamic file resolution patterns
-
-**HTTP examples:** run with `mockr --config examples/<name>`
-
-**gRPC examples:** run with `mockr --config examples/<name> --grpc-proto examples/<name>/<file>.proto`
-
-See [`examples/README.md`](examples/README.md) for `grpcurl` commands for each example.
-
----
-
-## Project structure
+## Project Structure
 
 ```
 mockr/
-├── main.go
+├── main.go                    # Entrypoint
 ├── cmd/
-│   ├── root.go              # CLI entry point (cobra) — HTTP + gRPC flags
-│   └── generate.go          # generate subcommand (OpenAPI + proto modes)
+│   ├── root.go                # CLI (cobra) — HTTP + gRPC flags
+│   └── generate.go            # generate subcommand (OpenAPI + proto)
 ├── internal/
-│   ├── config/
-│   │   ├── types.go          # Config, Route, GRPCRoute, Condition, Case, Transition structs
-│   │   └── loader.go         # File + directory loader, fsnotify hot reload
-│   ├── generate/
-│   │   ├── generator.go      # OpenAPI orchestrator: load spec → parse → write
-│   │   ├── parser.go         # kin-openapi wrapper: load spec (file/URL), parse operations
-│   │   ├── synth.go          # OpenAPI schema → synthetic example JSON
-│   │   ├── writer.go         # Write TOML/YAML/JSON config + stub files (OpenAPI)
-│   │   └── proto_generator.go# Proto → grpc_routes config + stub JSON files
-│   ├── grpc/
-│   │   ├── codec.go          # Raw-bytes passthrough codec (enables unknown-service handler)
-│   │   ├── descriptor.go     # Runtime proto registry (jhump/protoreflect, no protoc)
-│   │   ├── forward.go        # Transparent h2c proxy to upstream gRPC server
-│   │   ├── handler.go        # gRPC unknown-service handler: match → condition → mock/proxy
-│   │   ├── persist.go        # gRPC directory-based mutations (update / append / delete)
-│   │   ├── server.go         # grpc.Server lifecycle + reflection
-│   │   ├── template.go       # {{uuid}} / {{now}} / {{timestamp}} rendering for gRPC stubs
-│   │   └── transitions.go    # Time-based transition state for gRPC routes
-│   ├── logger/
-│   │   └── logger.go         # Pretty terminal logger (HTTP + gRPC, via=stub/proxy)
-│   ├── persist/
-│   │   ├── persist.go        # Directory-based stub operations (ReadDir, Update, AppendToDir, DeleteFile)
-│   │   └── persist_test.go   # Comprehensive test coverage for directory-based operations
-│   └── proxy/
-│       ├── server.go         # HTTP server + CORS middleware
-│       ├── handler.go        # Per-request dispatch
-│       ├── matcher.go        # Path matching (exact / wildcard / regex / named params)
-│       ├── matcher_test.go   # Named parameters and pattern matching tests
-│       ├── conditions.go     # Condition evaluation (body / query / header / path)
-│       ├── dynamic_file.go   # {source.field} and {path.param} placeholder resolution
-│       ├── dynamic_file_test.go # Dynamic file resolution and security tests
-│       ├── mock.go           # Serve mock responses + template rendering
-│       ├── persist.go        # HTTP persist wrapper (uses internal/persist)
-│       ├── persist_test.go   # HTTP persistence integration tests
-│       ├── transitions.go    # Time-based response transition state
-│       ├── forward.go        # Reverse proxy to upstream
-│       └── record.go         # Record mode + --init scaffold
-├── examples/
-│   ├── basic/                # HTTP — static stubs and named cases
-│   ├── conditions/           # HTTP — condition routing
-│   ├── directory-stubs/      # HTTP — directory-based CRUD (one file per resource)
-│   ├── dynamic-files/        # HTTP — {source.field} and named parameter placeholders
-│   ├── transitions/          # HTTP — time-based response transitions
-│   ├── record-mode/          # HTTP — proxy + auto-record
-│   ├── openapi-generate/     # HTTP — generate from OpenAPI spec
-│   ├── grpc-mock/            # gRPC — basic unary mock
-│   ├── grpc-conditions/      # gRPC — condition routing on body fields
-│   ├── grpc-proxy/           # gRPC — selective mock + upstream proxy fallthrough
-│   ├── grpc-directory-persist/ # gRPC — directory-based CRUD
-│   ├── named-params-example.toml     # Standalone named parameters demo
-│   ├── dynamic-files-example.toml    # Standalone dynamic file demo
-│   └── README.md             # Example usage with grpcurl commands
-├── assets/
-│   ├── logo.svg              # mockr logo (light theme)
-│   └── logo-dark.svg         # mockr logo (dark theme)
-├── scripts/
-│   └── pre-push              # Git pre-push hook
-├── .github/workflows/
-│   ├── ci.yml                # Continuous integration pipeline
-│   └── release.yml           # Automated release builds
-├── NAMED_PARAMETERS.md       # Named path parameters implementation guide
-├── Taskfile.yml              # Dev task runner
-├── devbox.json               # Reproducible dev environment
-└── .goreleaser.yml           # Cross-platform release builds
+│   ├── config/                # Config types + hot-reload loader
+│   ├── generate/              # OpenAPI + proto config generation
+│   ├── grpc/                  # gRPC server, handler, codec, proxy, persist
+│   ├── logger/                # Terminal logger
+│   ├── persist/               # Directory-based stub operations
+│   └── proxy/                 # HTTP server, handler, matcher, conditions, mocking
+├── examples/                  # Runnable examples for each feature
+├── docs/                      # Usage documentation
+├── npm/                       # npm distribution packages
+├── assets/                    # Logos
+└── .github/workflows/         # CI, release, npm publish
 ```
 
 ---
 
 ## Development
 
-This project uses [devbox](https://www.jetify.com/devbox) for a reproducible local environment and [Task](https://taskfile.dev) as the task runner.
+This project uses [devbox](https://www.jetify.com/devbox) for a reproducible dev environment and [Task](https://taskfile.dev) as the task runner.
 
 ### Setup
 
 ```sh
-# Enter the dev environment (installs Go 1.25.1, golangci-lint, goreleaser)
-devbox shell
-
-# List available tasks
-task --list
+devbox shell                   # Go 1.25.1, golangci-lint, goreleaser
+task --list                    # See available tasks
 ```
 
 ### Common tasks
 
 ```sh
-task build                                          # compile binary
-task test                                           # go test ./... -race
-task lint                                           # golangci-lint
-task fmt                                            # gofmt -w .
-task vet                                            # go vet ./...
-task check                                          # fmt + vet + lint + test in one shot
-task run:basic                                      # run with examples/basic config
-task run:full-crud                                  # run with examples/full-crud config
-task run:grpc-mock                                  # run gRPC basic mock example
-task run:grpc-conditions                            # run gRPC conditions example
-task run:grpc-proxy                                 # run gRPC proxy example (GRPC_TARGET=addr)
-task run:grpc-persist                               # run gRPC stateful CRUD example
-task generate SPEC=openapi.yaml                     # generate from local OpenAPI spec
-task generate SPEC=https://petstore3.swagger.io/api/v3/openapi.json  # generate from URL
-task generate:proto PROTO=service.proto             # generate from a .proto file
-task generate:proto:example                         # regenerate grpc-mock example (smoke test)
-task snapshot                                       # local goreleaser build (no publish)
-task clean                                          # remove binary and build artifacts
+task build                     # Compile binary
+task test                      # go test ./... -race
+task lint                      # golangci-lint
+task check                     # fmt + vet + lint + test
+task run:basic                 # Run with examples/basic config
 ```
 
 ### Without devbox
@@ -1492,57 +174,29 @@ task clean                                          # remove binary and build ar
 ```sh
 git clone https://github.com/ridakaddir/mockr.git
 cd mockr
-go mod download
 go build -o mockr .
 ./mockr --init
-./mockr --target https://jsonplaceholder.typicode.com --api-prefix /api
 ```
 
 ### Testing
 
-mockr has comprehensive test coverage across all major components:
-
 ```sh
-task test                    # Run all tests with race detection
-go test ./... -race -v       # Verbose test output
-go test ./internal/proxy/... # Test specific package
+task test                      # All tests with race detection
+go test ./... -race -v         # Verbose output
+go test ./internal/proxy/...   # Specific package
 ```
 
-**Test coverage includes:**
-- Unit tests for all internal packages (`*_test.go` files)
-- Named path parameter extraction and matching
-- Persistence operations (both wrapped and bare array modes)
-- Dynamic file resolution and security features
-- Condition evaluation and route matching
-- gRPC functionality and protocol handling
+### CI / Release
 
-### CI/CD Pipeline
-
-The project uses GitHub Actions for continuous integration and release automation:
-
-- **CI Workflow** (`.github/workflows/ci.yml`)
-  - Runs on push to `main` and all pull requests
-  - Tests on Linux and macOS
-  - Includes `go vet`, `golangci-lint`, and race condition detection
-  - Builds binary to ensure compilation success
-
-- **Release Workflow** (`.github/workflows/release.yml`)  
-  - Triggers on `v*` tag pushes
-  - Uses GoReleaser for cross-platform binary builds
-  - Automatically creates GitHub releases with binaries
-
-### Development Workflow
+| Workflow | Trigger | What it does |
+|---|---|---|
+| CI | push to `main`, PRs | vet, lint, test (race), build — Linux + macOS |
+| Release | `v*` tag push | GoReleaser cross-platform binaries + GitHub Release |
+| npm Publish | GitHub Release | Publish `@ridakaddir/mockr` to npm |
 
 ```sh
-# Pre-commit hook (optional but recommended)
-ln -s ../../scripts/pre-push .git/hooks/pre-push
-
-# Full development cycle
-task fmt     # Format code
-task vet     # Static analysis  
-task lint    # golangci-lint
-task test    # Run tests
-task check   # All of the above in sequence
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ---
@@ -1551,10 +205,7 @@ task check   # All of the above in sequence
 
 Contributions are welcome.
 
-1. Fork the repo and create a branch from `main`:
-   ```sh
-   git checkout -b feat/your-feature-name
-   ```
+1. Fork the repo and create a branch from `main`
 2. Make your changes with clear, focused commits
 3. Run `task check` — fmt, vet, lint, and tests must all pass
 4. Open a pull request against `main`
@@ -1563,7 +214,7 @@ Contributions are welcome.
 
 Open an issue with:
 - mockr version (`mockr --version`)
-- Your config file (redact any secrets)
+- Your config file (redact secrets)
 - Steps to reproduce + expected vs actual behaviour
 
 ### Areas open for contribution
@@ -1572,22 +223,6 @@ Open an issue with:
 - Response headers in case definitions
 - Shell completions (`mockr completion bash|zsh|fish`)
 - Homebrew formula
-
----
-
-## CI / Release
-
-| Workflow | Trigger | What it does |
-|---|---|---|
-| CI | push to `main`, pull requests | vet → lint → test (race) → build, on Linux + macOS |
-| Release | `v*` tag push | goreleaser builds cross-platform binaries and creates a GitHub Release |
-
-To cut a release:
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
 
 ---
 

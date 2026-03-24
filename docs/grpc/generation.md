@@ -1,0 +1,76 @@
+# gRPC Generation
+
+[Home](../README.md) > [gRPC](README.md) > Generation
+
+---
+
+Scaffold a complete `[[grpc_routes]]` config and synthetic stub files from a `.proto` file in one command.
+
+## Usage
+
+```sh
+mockr generate --proto service.proto --out ./mocks
+
+# Multiple proto files
+mockr generate --proto users.proto --proto orders.proto --out ./mocks
+
+# With extra import paths for proto imports
+mockr generate --proto service.proto --import-path ./vendor/protos --format yaml
+```
+
+---
+
+## Generated output
+
+For a `UserService` with three methods:
+
+```
+mocks/
+├── mockr.toml            # [[grpc_routes]] for all methods
+└── stubs/
+    ├── UserService_GetUser.json
+    ├── UserService_ListUsers.json
+    └── UserService_CreateUser.json
+```
+
+---
+
+## Stub synthesis
+
+Stubs are synthesised from the output message descriptor — field names, types, and common naming patterns produce sensible placeholder values:
+
+| Field name pattern | Synthesised value |
+|---|---|
+| contains `id` | `"{{uuid}}"` |
+| contains `email` | `"user@example.com"` |
+| contains `url` / `uri` | `"https://example.com"` |
+| contains `time` / `at` / `date` | `"{{now}}"` |
+| contains `name` | `"Example Name"` |
+| `bool` type | `true` |
+| `int32` / `int64` etc. | `1` |
+| `float` / `double` | `1.0` |
+
+---
+
+## Flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--proto <file>` | — | Path to a `.proto` file; repeat for multiple files |
+| `--import-path <dir>` | — | Extra directory for proto imports; repeat for multiple |
+| `--out <dir>` | `mocks` | Output directory |
+| `--format <fmt>` | `toml` | Config format: `toml`, `yaml`, `json` |
+
+---
+
+## Serve immediately
+
+After generating, start the server:
+
+```sh
+mockr --config ./mocks --grpc-proto service.proto
+```
+
+---
+
+**See also:** [gRPC Quick Start](quick-start.md) | [Configuration](config.md) | [OpenAPI Generation](../openapi/generate.md)
