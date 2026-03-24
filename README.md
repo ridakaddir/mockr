@@ -61,6 +61,18 @@
 
 ## Install
 
+**Install with npm** (recommended for frontend projects):
+
+```sh
+npm install -D @ridakaddir/mockr
+```
+
+This registers the `mockr` command in your project. Use it via `npx` or in `package.json` scripts:
+
+```sh
+npx mockr --init
+```
+
 **Download a binary** from the [latest release](https://github.com/ridakaddir/mockr/releases):
 
 ```sh
