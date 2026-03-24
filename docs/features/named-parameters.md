@@ -1,0 +1,162 @@
+# Named Path Parameters
+
+[Home](../README.md) > [Features](README.md) > Named Parameters
+
+---
+
+mockr supports `{name}` placeholders in route patterns to extract values from URL paths. Extracted values can be used for key resolution, conditions, and dynamic file paths.
+
+## Syntax
+
+Use curly braces to define named parameters that match exactly one path segment:
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/api/users/{userId}"
+enabled  = true
+fallback = "success"
+```
+
+A request to `GET /api/users/john123` extracts `userId = "john123"`.
+
+---
+
+## Multiple parameters
+
+Extract several values from a single route:
+
+```toml
+[[routes]]
+method   = "PUT"
+match    = "/api/users/{userId}/posts/{postId}"
+enabled  = true
+fallback = "update_post"
+```
+
+`PUT /api/users/42/posts/99` extracts `userId = "42"` and `postId = "99"`.
+
+---
+
+## Mixed patterns
+
+Named parameters can coexist with wildcard `*` patterns:
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/api/v1/*/environments/{envId}/endpoint/{endpointId}"
+enabled  = true
+fallback = "success"
+```
+
+---
+
+## Dynamic file resolution
+
+Use `{path.paramName}` in file paths to serve resource-specific stub files:
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/api/users/{userId}/profile"
+enabled  = true
+fallback = "user_profile"
+
+  [routes.cases.user_profile]
+  status = 200
+  file   = "stubs/user-{path.userId}-profile.json"
+```
+
+**Request:** `GET /api/users/john123/profile`
+**Resolves to:** `stubs/user-john123-profile.json`
+
+Nested directory structures work too:
+
+```toml
+file = "stubs/env-{path.envId}/endpoint-{path.endpointId}.json"
+```
+
+---
+
+## Persistence with named parameters
+
+Named path parameters have the **highest priority** in key resolution for persistence operations:
+
+```toml
+[[routes]]
+method   = "PUT"
+match    = "/api/users/{userId}/posts/{postId}"
+enabled  = true
+fallback = "update_post"
+
+  [routes.cases.update_post]
+  status  = 200
+  file    = "stubs/posts.json"
+  persist = true
+  merge   = "replace"
+  key     = "postId"    # resolved from {postId} in the URL path
+```
+
+### Key resolution priority
+
+When using persistence operations, key values are resolved in this order:
+
+1. **Named path parameters** — `{userId}`, `{postId}` from the URL path
+2. **Path wildcards** — existing `*` behaviour (fallback)
+3. **Request body fields** — JSON field extraction
+4. **Query parameters** — URL query parameters
+
+---
+
+## Conditions with named parameters
+
+Use `source = "path"` to match on extracted values:
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/api/users/{userId}/orders"
+enabled  = true
+fallback = "default"
+
+  [[routes.conditions]]
+  source = "path"
+  field  = "userId"
+  op     = "eq"
+  value  = "vip-user"
+  case   = "vip_orders"
+
+  [routes.cases.vip_orders]
+  status = 200
+  file   = "stubs/vip-orders.json"
+
+  [routes.cases.default]
+  status = 200
+  file   = "stubs/regular-orders.json"
+```
+
+---
+
+## Security
+
+Named parameter file resolution includes built-in protections:
+
+- **Path traversal prevention** — `.` and `..` patterns are neutralised
+- **Hidden file protection** — leading dots in filenames are replaced
+- **Character sanitisation** — unsafe characters are removed from file paths
+
+---
+
+## Backward compatibility
+
+Named path parameters are **100% backward compatible**:
+
+- All existing route patterns continue to work unchanged
+- Existing wildcard `*` behaviour is preserved
+- No breaking changes to configuration format
+- Routes without named parameters use existing fast paths
+
+---
+
+**See also:** [Dynamic File Resolution](dynamic-files.md) | [Directory-Based Stubs](directory-stubs.md) | [Conditions](conditions.md)
