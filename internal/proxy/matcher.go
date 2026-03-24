@@ -5,18 +5,6 @@ import (
 	"strings"
 )
 
-// matchPath returns true if the incoming request path matches the route's match pattern.
-// Four match styles are supported:
-//
-//	exact:    "/api/users"           — must equal path exactly
-//	wildcard: "/api/users/*"         — prefix match; * matches any single segment or multiple segments
-//	named:    "/api/users/{userId}"  — {name} matches exactly one path segment
-//	regex:    "~^/api/users/\d+$"    — full regexp (prefix with ~)
-func matchPath(pattern, path string) bool {
-	matched, _ := matchWithNamedParams(pattern, path)
-	return matched
-}
-
 // matchWildcard performs simple glob-style matching where * matches any sequence
 // of non-empty characters (including path separators).
 func matchWildcard(pattern, path string) bool {

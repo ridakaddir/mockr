@@ -1,0 +1,8 @@
+{
+  "userId": "3",
+  "name": "Charlie Davis",
+  "email": "charlie@example.com",
+  "role": "user",
+  "active": false,
+  "createdAt": "2024-01-17T09:15:00Z"
+}

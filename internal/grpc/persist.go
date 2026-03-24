@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -28,28 +29,27 @@ func (h *handler) applyGRPCPersist(
 
 	switch strings.ToLower(c.Merge) {
 
-	case "append":
-		if err := persist.Append(filePath, c.ArrayKey, reqMap); err != nil {
-			logger.Error("grpc persist append", "file", filePath, "err", err)
+	case "update":
+		if _, err := persist.Update(filePath, reqMap); err != nil {
+			if persist.IsNotFound(err) {
+				logger.LogGRPC(fullMethod, codes.NotFound, time.Since(start), logger.SourceStub)
+				return codes.NotFound, true
+			}
+			logger.Error("grpc persist update", "file", filePath, "err", err)
 			logger.LogGRPC(fullMethod, codes.Internal, time.Since(start), logger.SourceStub)
 			return codes.Internal, true
 		}
 		logger.LogGRPC(fullMethod, codes.OK, time.Since(start), logger.SourceStub)
 		return codes.OK, true
 
-	case "replace":
-		keyVal := resolveGRPCKeyValue(c.Key, reqMap)
-		if keyVal == "" {
-			logger.Warn("grpc persist replace: key not found in request", "key", c.Key)
+	case "append":
+		if !isGRPCDirectoryPath(filePath, c.File) {
+			logger.Error("grpc persist append", "file", filePath, "err", "append requires directory path")
 			logger.LogGRPC(fullMethod, codes.InvalidArgument, time.Since(start), logger.SourceStub)
 			return codes.InvalidArgument, true
 		}
-		if _, err := persist.Replace(filePath, c.ArrayKey, c.Key, keyVal, reqMap); err != nil {
-			if persist.IsNotFound(err) {
-				logger.LogGRPC(fullMethod, codes.NotFound, time.Since(start), logger.SourceStub)
-				return codes.NotFound, true
-			}
-			logger.Error("grpc persist replace", "file", filePath, "err", err)
+		if _, err := persist.AppendToDir(filePath, c.Key, reqMap); err != nil {
+			logger.Error("grpc persist append to dir", "dir", filePath, "err", err)
 			logger.LogGRPC(fullMethod, codes.Internal, time.Since(start), logger.SourceStub)
 			return codes.Internal, true
 		}
@@ -57,18 +57,12 @@ func (h *handler) applyGRPCPersist(
 		return codes.OK, true
 
 	case "delete":
-		keyVal := resolveGRPCKeyValue(c.Key, reqMap)
-		if keyVal == "" {
-			logger.Warn("grpc persist delete: key not found in request", "key", c.Key)
-			logger.LogGRPC(fullMethod, codes.InvalidArgument, time.Since(start), logger.SourceStub)
-			return codes.InvalidArgument, true
-		}
-		if err := persist.Delete(filePath, c.ArrayKey, c.Key, keyVal); err != nil {
+		if err := persist.DeleteFile(filePath); err != nil {
 			if persist.IsNotFound(err) {
 				logger.LogGRPC(fullMethod, codes.NotFound, time.Since(start), logger.SourceStub)
 				return codes.NotFound, true
 			}
-			logger.Error("grpc persist delete", "file", filePath, "err", err)
+			logger.Error("grpc persist delete file", "file", filePath, "err", err)
 			logger.LogGRPC(fullMethod, codes.Internal, time.Since(start), logger.SourceStub)
 			return codes.Internal, true
 		}
@@ -82,19 +76,17 @@ func (h *handler) applyGRPCPersist(
 	}
 }
 
-// resolveGRPCKeyValue extracts the key value from the decoded request map.
-// Tries the field name as-is first, then the camelCase conversion so that
-// both "item_id" and "itemId" work.
-func resolveGRPCKeyValue(key string, reqMap map[string]interface{}) string {
-	if v, ok := reqMap[key]; ok {
-		return fmt.Sprintf("%v", v)
+// isGRPCDirectoryPath determines if a file path should be treated as a directory.
+func isGRPCDirectoryPath(resolvedPath, originalConfigFile string) bool {
+	info, err := os.Stat(resolvedPath)
+	if err == nil && info.IsDir() {
+		return true
 	}
-	if camel := snakeToCamel(key); camel != key {
-		if v, ok := reqMap[camel]; ok {
-			return fmt.Sprintf("%v", v)
-		}
+	// If path doesn't exist but original config indicated directory intent
+	if os.IsNotExist(err) && strings.HasSuffix(originalConfigFile, "/") {
+		return true
 	}
-	return ""
+	return false
 }
 
 // resolveGRPCFilePath resolves {body.field} placeholders in the file path and

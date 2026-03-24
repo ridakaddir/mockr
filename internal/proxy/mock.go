@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ridakaddir/mockr/internal/config"
 	"github.com/ridakaddir/mockr/internal/logger"
+	"github.com/ridakaddir/mockr/internal/persist"
 )
 
 // serveMock writes a mock response for the given case to w.
@@ -39,7 +40,17 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 			filePath = filepath.Join(configDir, filePath)
 		}
 
-		body, err = os.ReadFile(filePath)
+		// Check if this is a directory path (for aggregation)
+		if isDirectoryPath(filePath, c.File) {
+			body, err = persist.ReadDir(filePath)
+			if err != nil {
+				logger.Error("reading stub directory", "dir", filePath, "err", err)
+				http.Error(w, `{"error":"stub directory read error"}`, http.StatusInternalServerError)
+				return
+			}
+		} else {
+			body, err = os.ReadFile(filePath)
+		}
 		if err != nil {
 			if os.IsNotExist(err) {
 				// Signal caller that the file was not found so it can fall through.

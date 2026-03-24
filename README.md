@@ -31,7 +31,7 @@
 - **Named path parameters** — extract values from URLs with `{name}` syntax for key resolution and dynamic files
 - **Condition routing** — activate different cases based on request body fields, query params, headers, or path parameters
 - **Dynamic file resolution** — serve `stubs/user-{query.username}-orders.json` or `stubs/user-{path.userId}-profile.json` resolved at request time
-- **Stateful mocks** — `POST`/`PUT`/`PATCH`/`DELETE` persist changes into stub files (append / replace / delete); supports both wrapped objects and bare arrays for API contract compatibility
+- **Directory-based stub storage** — each resource stored as separate JSON files; `GET` lists aggregate directories, `POST`/`PATCH`/`DELETE` operate on individual files
 - **Directory config** — point `--config` at a folder and mockr loads and merges all config files in it
 - **Reverse proxy fallthrough** — unmatched routes forward to a real upstream API
 - **Hot reload** — edit any config file and changes apply on the next request, no restart needed
@@ -45,7 +45,7 @@
 - **gRPC mock** — mock unary gRPC methods from `.proto` files; stub responses with protojson; no `protoc` or codegen required
 - **gRPC proxy** — forward unmatched gRPC methods transparently to an upstream server (h2c)
 - **gRPC conditions** — route gRPC calls to different cases based on request body fields, using the same condition operators as REST
-- **gRPC persist** — stateful CRUD: `append` / `replace` / `delete` mutations on stub JSON files, same as REST persist
+- **gRPC persist** — stateful CRUD: `update` / `append` / `delete` operations on directory-based stub files, same as REST persist
 - **gRPC generate** — `mockr generate --proto` scaffolds `[[grpc_routes]]` config and stub JSON files from a `.proto` file
 - **gRPC reflection** — built-in server reflection so `grpcurl` and `grpc-ui` work out of the box
 
@@ -433,64 +433,80 @@ enabled = true
 # UpdateProduct is not defined at all — always proxied to --grpc-target
 ```
 
-#### Stateful persist
+#### Directory-based persist
 
-gRPC routes support the same `persist` / `merge` / `key` / `array_key` fields as REST cases. The stub file is mutated on disk and subsequent reads reflect the change.
+gRPC routes support the same directory-based persistence as HTTP routes. Each resource is stored as a separate JSON file.
 
 ```toml
-# Append incoming request body as a new record
+# Create item - append to directory
 [[grpc_routes]]
 match    = "/items.ItemService/CreateItem"
 enabled  = true
 fallback = "created"
 
   [grpc_routes.cases.created]
-  status    = 0
-  file      = "stubs/items.json"
-  persist   = true
-  merge     = "append"
-  array_key = "items"
+  status = 0
+  file   = "stubs/items/"     # Directory path
+  persist = true
+  merge   = "append"
+  key     = "itemId"          # Field used as filename; auto-generated if missing
 
-# Replace the record matching key = "itemId" with the incoming body
+# List items - directory aggregation  
 [[grpc_routes]]
-match    = "/items.ItemService/UpdateItem"
+match    = "/items.ItemService/ListItems"
+enabled  = true
+fallback = "list"
+
+  [grpc_routes.cases.list]
+  file = "stubs/items/"       # Returns array of all .json files
+
+# Get item - single file read
+[[grpc_routes]]
+match    = "/items.ItemService/GetItem"
+enabled  = true
+fallback = "item"
+
+  [grpc_routes.cases.item]
+  file = "stubs/items/{body.itemId}.json"  # Dynamic filename from request
+
+# Update item - shallow merge into existing file
+[[grpc_routes]]
+match    = "/items.ItemService/UpdateItem" 
 enabled  = true
 fallback = "updated"
 
   [grpc_routes.cases.updated]
-  status    = 0
-  file      = "stubs/items.json"
-  persist   = true
-  merge     = "replace"
-  key       = "itemId"
-  array_key = "items"
+  status  = 0
+  file    = "stubs/items/{body.itemId}.json"
+  persist = true
+  merge   = "update"          # Shallow merge
 
-# Delete the record matching key = "itemId"
+# Delete item - remove file
 [[grpc_routes]]
 match    = "/items.ItemService/DeleteItem"
 enabled  = true
 fallback = "deleted"
 
   [grpc_routes.cases.deleted]
-  status    = 0
-  file      = "stubs/items.json"
-  persist   = true
-  merge     = "delete"
-  key       = "itemId"
-  array_key = "items"
+  status  = 0
+  file    = "stubs/items/{body.itemId}.json"
+  persist = true
+  merge   = "delete"          # Remove file
 ```
 
-**Key resolution:** for `replace` and `delete`, the key value is extracted from the incoming request body. Both snake_case (`item_id`) and camelCase (`itemId`) field names in the request are matched against `key` automatically.
+**Field name mapping:** Both snake_case (`item_id`) and camelCase (`itemId`) field names in protobuf requests are matched against `key` automatically.
 
 **Error codes:**
 
 | Situation | gRPC code |
 |---|---|
-| Record not found | `5` NOT_FOUND |
-| Key field missing from request | `3` INVALID_ARGUMENT |
-| Stub file unreadable / parse error | `13` INTERNAL |
+| File/record not found | `5` NOT_FOUND |
+| Directory required for append | `3` INVALID_ARGUMENT |
+| File read/write error | `13` INTERNAL |
 
-**Response body:** all persist operations return an empty proto response (`{}`). The gRPC status code signals success or failure — inspect the stub file directly or follow up with a list/get call to confirm the mutation.
+**Response body:** All persist operations return an empty proto response (`{}`). The gRPC status code signals success or failure.
+
+**Example:** See `examples/grpc-directory-persist/` for a complete working example.
 
 #### Transitions
 
@@ -664,10 +680,9 @@ Mix formats freely — TOML, YAML, and JSON can coexist in the same directory.
 | `json` | string | — | Inline JSON body (supports [template tokens](#template-tokens)) |
 | `file` | string | — | Stub file path (supports [dynamic resolution](#dynamic-file-resolution)) |
 | `delay` | int | `0` | Seconds to wait before responding |
-| `persist` | bool | `false` | Mutate the stub file on disk (append / replace / delete) |
-| `merge` | string | — | `append`, `replace`, or `delete` (requires `persist: true`) |
-| `key` | string | — | Field in the stored record to match on for `replace`/`delete` |
-| `array_key` | string | — | Top-level array field inside the stub JSON to operate on |
+| `persist` | bool | `false` | Mutate the stub file/directory on disk |
+| `merge` | string | — | `update`, `append`, or `delete` (requires `persist: true`) |
+| `key` | string | — | Field name for filename when using `append` with directories |
 
 ---
 
@@ -893,168 +908,127 @@ For detailed implementation information, see [`NAMED_PARAMETERS.md`](NAMED_PARAM
 
 ---
 
-## Stateful mocks (persist)
+## Directory-Based Stub Storage
 
-When `persist: true`, mutating requests update the stub file on disk. Subsequent reads reflect the change.
+When `persist: true`, mutating requests operate on individual JSON files stored in directories. Each resource is a separate file, enabling a "single source of truth" convention.
 
-**Mockr supports two persist modes** to match different API response formats. Choose the mode that matches your API's actual response structure for true contract compatibility:
+### How It Works
 
-### Wrapped Object Mode (Traditional)
-
-Use when your API returns objects containing arrays like `{"users": [...]}`:
-
-#### `append` — add a record (POST)
-
-```toml
-[routes.cases.created]
-status    = 201
-file      = "stubs/users.json"
-persist   = true
-merge     = "append"
-array_key = "users"    # Required: specifies array field
+**Directory Structure:**
+```
+stubs/
+└── users/
+    ├── 1.json     # {"userId": "1", "name": "Alice", ...}
+    ├── 2.json     # {"userId": "2", "name": "Bob", ...}
+    └── 3.json     # {"userId": "3", "name": "Charlie", ...}
 ```
 
-#### `replace` — update a record (PUT / PATCH)
+**API Operations:**
+- **GET list**: Aggregates all `.json` files in directory into an array
+- **GET detail**: Reads single file by ID
+- **POST create**: Creates new file (auto-generates UUID if ID missing)
+- **PATCH update**: Shallow-merges request body into existing file  
+- **DELETE**: Removes file from disk
 
-```toml
-[routes.cases.updated]
-status    = 200
-file      = "stubs/users.json"
-persist   = true
-merge     = "replace"
-key       = "id"
-array_key = "users"    # Required: specifies array field
-```
+### Configuration
 
-#### `delete` — remove a record (DELETE)
-
-```toml
-[routes.cases.deleted]
-status    = 204
-file      = "stubs/users.json"
-persist   = true
-merge     = "delete"
-key       = "id"
-array_key = "users"    # Required: specifies array field
-```
-
-**Stub file format:**
-```json
-{
-  "users": [
-    {"id": "1", "name": "Alice"}
-  ]
-}
-```
-
-### Bare Array Mode (New)
-
-Use when your API returns bare arrays like `[{...}, {...}]` for true API contract compatibility:
-
-#### `append` — add a record (POST)
+#### `append` — Create resource (POST)
 
 ```toml
 [routes.cases.created]
 status  = 201
-file    = "stubs/users.json"
+file    = "stubs/users/"    # Directory path (trailing /)
 persist = true
 merge   = "append"
-# array_key omitted — operates on bare array
+key     = "userId"          # Field used as filename; auto-generated if missing
 ```
 
-#### `replace` — update a record (PUT / PATCH)
+#### `update` — Update resource (PATCH/PUT)
 
 ```toml
 [routes.cases.updated]
-status  = 200
-file    = "stubs/users.json"
+file    = "stubs/users/{path.userId}.json"  # Single file path
 persist = true
-merge   = "replace"
-key     = "id"
-# array_key omitted — operates on bare array
+merge   = "update"    # Shallow merge into existing file
 ```
 
-#### `delete` — remove a record (DELETE)
+#### `delete` — Remove resource (DELETE)
 
 ```toml
 [routes.cases.deleted]
 status  = 204
-file    = "stubs/users.json"
+file    = "stubs/users/{path.userId}.json"
 persist = true
-merge   = "delete"
-key     = "id"
-# array_key omitted — operates on bare array
+merge   = "delete"    # Remove file from disk
 ```
 
-**Stub file format:**
-```json
-[
-  {"id": "1", "name": "Alice"}
-]
+#### Directory aggregation (GET list)
+
+```toml
+[routes.cases.list]
+file = "stubs/users/"    # Directory path - returns array of all files
 ```
 
-### Configuration Validation
+#### Single file read (GET detail)
 
-Mockr automatically validates that your configuration matches your stub file format:
+```toml
+[routes.cases.user]
+file = "stubs/users/{path.userId}.json"  # Dynamic filename from path
+```
 
-- **Wrapped mode** (with `array_key`): Stub file must be a JSON object containing the specified array field
-- **Bare array mode** (without `array_key`): Stub file must be a JSON array at the root level
+### Auto-ID Generation
 
-**Validation happens on every persist operation** to ensure data consistency and provide helpful error guidance.
-
-**Common validation errors:**
+When `merge = "append"` and the request body is missing the `key` field:
 
 ```bash
-# Mismatch: object file without array_key
-Error: stub file "stubs/users.json" contains a JSON object but array_key is not specified. 
-Either provide array_key to specify which field contains the array, or convert the file to a bare JSON array
+# POST without userId
+curl -X POST /users -d '{"name": "New User"}'
 
-# Mismatch: array file with array_key  
-Error: stub file "stubs/users.json" is a bare JSON array but array_key="users" is specified. 
-Either remove array_key or wrap the array in an object like {"users": [...]}
-
-# Wrong field name
-Error: array_key "items" not found in stub file. Available keys: ["data", "metadata"]
-
-# Wrong field type
-Error: field "users" is not a JSON array (found string). 
-Ensure the field contains an array like: "users": [{...}, {...}]
-
-# Invalid JSON content
-Error: stub file contains null, expected JSON array or JSON object
-Error: stub file contains number, expected JSON array or JSON object
+# Creates file: stubs/users/a1b2c3d4-5678-90ef-ghij-klmnopqrstuv.json
+# Response: {"userId": "a1b2c3d4-5678-90ef-ghij-klmnopqrstuv", "name": "New User"}
 ```
 
-### When to Use Each Mode
+### Nested Subdirectories
 
-**🎯 Use Bare Array Mode (Recommended for new projects):**
-- Your real API returns bare arrays: `[{}, {}]`
-- You want **exact API contract compatibility**
-- Building standard REST APIs following JSON:API or similar specs
-- You prefer simpler stub file management
-- Working with frontend frameworks that expect bare arrays
+Support sub-resources with nested directories:
 
-**📦 Use Wrapped Object Mode when:**
-- Your real API returns `{"data": [...], "meta": {...}}`
-- You need multiple fields in responses (pagination, metadata)
-- Working with existing wrapped configurations
-- Legacy API compatibility requirements
-
-### Examples
-
-- **Wrapped Object**: See `examples/persist/` 
-- **Bare Array**: See `examples/bare-array-persist/`
-- **Side-by-side comparison**: See `examples/persist-comparison/`
-
-**Performance Note**: Persist operations read files only once per operation, with automatic validation and type detection for optimal performance.
-
-**Key resolution order for `replace`/`delete`:** path wildcard → request body → query param.
-
-Record not found returns `404`:
-
-```json
-{ "error": "record not found", "key": "id", "value": "99" }
 ```
+stubs/
+├── deployments/
+│   ├── endpoint-123/
+│   │   ├── deploy-1.json
+│   │   └── deploy-2.json
+│   └── endpoint-456/
+│       └── deploy-3.json
+```
+
+```toml
+# GET /endpoints/{endpointId}/deployments
+[routes.cases.list_deployments]  
+file = "stubs/deployments/{path.endpointId}/"
+
+# POST /endpoints/{endpointId}/deployments
+[routes.cases.create_deployment]
+file = "stubs/deployments/{path.endpointId}/"
+persist = true
+merge = "append"
+key = "deploymentId"
+```
+
+### Benefits
+
+- **Single source of truth**: Each resource is one file
+- **Version control friendly**: Clean diffs per resource
+- **No size limits**: Unlimited scalability vs. single-file arrays  
+- **Intuitive structure**: File layout mirrors API structure
+- **Atomic operations**: Each resource operation is independent
+
+### Example
+
+See `examples/directory-stubs/` for a complete working example with:
+- User listing (directory aggregation)
+- User creation (with/without auto-ID)
+- User retrieval, updates, and deletion
 
 ---
 
@@ -1294,18 +1268,15 @@ mockr --config examples/<name>
 |---|---|
 | `examples/basic` | Static stubs, named cases, hot reload |
 | `examples/conditions` | Body / query / header condition routing |
-| `examples/persist` | Stateful CRUD backed by stub files (wrapped object mode) |
-| `examples/bare-array-persist` | Stateful CRUD with bare array mode for API contract compatibility |
-| `examples/persist-comparison` | Side-by-side comparison of wrapped vs bare array persist modes |
+| `examples/directory-stubs` | Directory-based CRUD — each resource as separate JSON file |
 | `examples/dynamic-files` | `{source.field}` file path placeholders and named path parameters |
-| `examples/full-crud` | All features combined — blog posts API |
 | `examples/transitions` | Time-based response transitions and state progression |
 | `examples/record-mode` | Proxy + auto-record workflow |
 | `examples/openapi-generate` | Generate config from OpenAPI spec (Petstore example) |
 | `examples/grpc-mock` | gRPC unary mock — named cases, error codes, template tokens |
 | `examples/grpc-conditions` | gRPC condition routing on request body fields |
 | `examples/grpc-proxy` | gRPC selective mock + transparent upstream proxy fallthrough |
-| `examples/grpc-persist` | gRPC stateful CRUD — append / replace / delete backed by a stub file |
+| `examples/grpc-directory-persist` | gRPC directory-based CRUD — same as directory-stubs but for gRPC |
 
 **Additional example files:**
 - `named-params-example.toml` — Standalone named path parameters demonstration
@@ -1342,15 +1313,15 @@ mockr/
 │   │   ├── descriptor.go     # Runtime proto registry (jhump/protoreflect, no protoc)
 │   │   ├── forward.go        # Transparent h2c proxy to upstream gRPC server
 │   │   ├── handler.go        # gRPC unknown-service handler: match → condition → mock/proxy
-│   │   ├── persist.go        # gRPC stateful mutations (append / replace / delete)
+│   │   ├── persist.go        # gRPC directory-based mutations (update / append / delete)
 │   │   ├── server.go         # grpc.Server lifecycle + reflection
 │   │   ├── template.go       # {{uuid}} / {{now}} / {{timestamp}} rendering for gRPC stubs
 │   │   └── transitions.go    # Time-based transition state for gRPC routes
 │   ├── logger/
 │   │   └── logger.go         # Pretty terminal logger (HTTP + gRPC, via=stub/proxy)
 │   ├── persist/
-│   │   ├── persist.go        # Transport-agnostic stub file mutations (shared by HTTP + gRPC)
-│   │   └── persist_test.go   # Comprehensive test coverage for persistence operations
+│   │   ├── persist.go        # Directory-based stub operations (ReadDir, Update, AppendToDir, DeleteFile)
+│   │   └── persist_test.go   # Comprehensive test coverage for directory-based operations
 │   └── proxy/
 │       ├── server.go         # HTTP server + CORS middleware
 │       ├── handler.go        # Per-request dispatch
@@ -1368,18 +1339,15 @@ mockr/
 ├── examples/
 │   ├── basic/                # HTTP — static stubs and named cases
 │   ├── conditions/           # HTTP — condition routing
-│   ├── persist/              # HTTP — stateful CRUD (wrapped object mode)
-│   ├── bare-array-persist/   # HTTP — stateful CRUD (bare array mode)
-│   ├── persist-comparison/   # HTTP — side-by-side persist mode comparison
+│   ├── directory-stubs/      # HTTP — directory-based CRUD (one file per resource)
 │   ├── dynamic-files/        # HTTP — {source.field} and named parameter placeholders
-│   ├── full-crud/            # HTTP — all features combined
 │   ├── transitions/          # HTTP — time-based response transitions
 │   ├── record-mode/          # HTTP — proxy + auto-record
 │   ├── openapi-generate/     # HTTP — generate from OpenAPI spec
 │   ├── grpc-mock/            # gRPC — basic unary mock
 │   ├── grpc-conditions/      # gRPC — condition routing on body fields
 │   ├── grpc-proxy/           # gRPC — selective mock + upstream proxy fallthrough
-│   ├── grpc-persist/         # gRPC — stateful CRUD backed by a stub file
+│   ├── grpc-directory-persist/ # gRPC — directory-based CRUD
 │   ├── named-params-example.toml     # Standalone named parameters demo
 │   ├── dynamic-files-example.toml    # Standalone dynamic file demo
 │   └── README.md             # Example usage with grpcurl commands

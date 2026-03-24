@@ -12,6 +12,7 @@ import (
 
 	"github.com/ridakaddir/mockr/internal/config"
 	"github.com/ridakaddir/mockr/internal/logger"
+	"github.com/ridakaddir/mockr/internal/persist"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -222,9 +223,22 @@ func (h *handler) loadStub(c config.Case, reqMap map[string]interface{}) ([]byte
 	switch {
 	case c.File != "":
 		filePath := c.File
+		wantsDir := strings.HasSuffix(filePath, "/")
 		if !filepath.IsAbs(filePath) && configDir != "" {
 			filePath = filepath.Join(configDir, filePath)
 		}
+
+		// Check if this is a directory path (for aggregation)
+		info, statErr := os.Stat(filePath)
+		if (statErr == nil && info.IsDir()) || (wantsDir && os.IsNotExist(statErr)) {
+			b, err := persist.ReadDir(filePath)
+			if err != nil {
+				return nil, fmt.Errorf("reading stub directory %q: %w", filePath, err)
+			}
+			return b, nil
+		}
+
+		// Regular file read
 		b, err := os.ReadFile(filePath)
 		if err != nil {
 			return nil, fmt.Errorf("reading stub file %q: %w", filePath, err)

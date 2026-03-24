@@ -63,11 +63,6 @@ func Error(msg string, args ...any) {
 	l.Error(msg, args...)
 }
 
-// Fatal logs a fatal message and exits.
-func Fatal(msg string, args ...any) {
-	l.Fatal(msg, args...)
-}
-
 // Source values used by SetSource.
 const (
 	SourceStub  = "stub"  // response served from a local mock/stub file
