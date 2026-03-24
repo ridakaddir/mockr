@@ -32,6 +32,7 @@
 - **Condition routing** — activate different cases based on request body fields, query params, headers, or path parameters
 - **Dynamic file resolution** — serve `stubs/user-{query.username}-orders.json` or `stubs/user-{path.userId}-profile.json` resolved at request time
 - **Directory-based stub storage** — each resource stored as separate JSON files; `GET` lists aggregate directories, `POST`/`PATCH`/`DELETE` operate on individual files
+- **Persist defaults** — enrich `append`/`update` operations with server-generated fields (`status`, `createTime`, `{{uuid}}`) from a defaults JSON file; request body always wins on conflicts
 - **Directory config** — point `--config` at a folder and mockr loads and merges all config files in it
 - **Reverse proxy fallthrough** — unmatched routes forward to a real upstream API
 - **Hot reload** — edit any config file and changes apply on the next request, no restart needed
@@ -457,11 +458,12 @@ enabled  = true
 fallback = "created"
 
   [grpc_routes.cases.created]
-  status = 0
-  file   = "stubs/items/"     # Directory path
-  persist = true
-  merge   = "append"
-  key     = "itemId"          # Field used as filename; auto-generated if missing
+  status   = 0
+  file     = "stubs/items/"     # Directory path
+  persist  = true
+  merge    = "append"
+  key      = "itemId"           # Field used as filename; auto-generated if missing
+  defaults = "stubs/defaults/item.json"  # Server-generated fields ({{uuid}}, {{now}})
 
 # List items - directory aggregation  
 [[grpc_routes]]
@@ -695,6 +697,7 @@ Mix formats freely — TOML, YAML, and JSON can coexist in the same directory.
 | `persist` | bool | `false` | Mutate the stub file/directory on disk |
 | `merge` | string | — | `update`, `append`, or `delete` (requires `persist: true`) |
 | `key` | string | — | Field name for filename when using `append` with directories |
+| `defaults` | string | — | JSON file with default values; deep-merged under request body before `append`/`update` (supports [template tokens](#template-tokens) and [dynamic paths](#dynamic-file-resolution)) |
 
 ---
 
@@ -1000,6 +1003,73 @@ curl -X POST /users -d '{"name": "New User"}'
 # Response: {"userId": "123e4567-e89b-12d3-a456-426614174000", "name": "New User"}
 ```
 
+### Defaults for Append/Update
+
+When a `POST` creates a resource, the client typically sends only a subset of fields. Real APIs enrich the response with server-generated fields like `status`, `createTime`, or an auto-generated ID. The `defaults` field lets you define these:
+
+**Defaults file** (`stubs/defaults/user.json`):
+
+```json
+{
+  "userId": "{{uuid}}",
+  "role": "user",
+  "active": true,
+  "createdAt": "{{now}}"
+}
+```
+
+**Config:**
+
+```toml
+# POST /users - create with defaults
+[routes.cases.created]
+status   = 201
+file     = "stubs/users/"
+persist  = true
+merge    = "append"
+key      = "userId"
+defaults = "stubs/defaults/user.json"
+```
+
+**How it works:**
+
+1. mockr reads the defaults file and resolves template tokens (`{{uuid}}` → real UUID, `{{now}}` → timestamp)
+2. Deep-merges: defaults as the base, request body overlaid on top — **body always wins on conflicts**
+3. The merged result is saved to disk and returned as the response
+
+```bash
+# POST with just name and email
+curl -X POST /users -d '{"name": "Alice", "email": "alice@example.com"}'
+
+# Response (and saved file) includes defaults:
+# {
+#   "userId": "a1b2c3d4-...",
+#   "name": "Alice",
+#   "email": "alice@example.com",
+#   "role": "user",
+#   "active": true,
+#   "createdAt": "2026-03-24T10:30:00Z"
+# }
+```
+
+**Works with `update` too** — enrich PATCH requests with default fields:
+
+```toml
+[routes.cases.updated]
+file     = "stubs/users/{path.userId}.json"
+persist  = true
+merge    = "update"
+defaults = "stubs/defaults/user-update.json"
+```
+
+**Defaults path supports dynamic placeholders:**
+
+```toml
+defaults = "stubs/defaults/{path.resourceType}.json"
+```
+
+**Error handling:** If the defaults file is missing or contains invalid JSON, mockr logs a warning and proceeds with the original request body (no failure).
+
 ### Nested Subdirectories
 
 Support sub-resources with nested directories:
@@ -1021,10 +1091,11 @@ file = "stubs/deployments/{path.endpointId}/"
 
 # POST /endpoints/{endpointId}/deployments
 [routes.cases.create_deployment]
-file = "stubs/deployments/{path.endpointId}/"
-persist = true
-merge = "append"
-key = "deploymentId"
+file     = "stubs/deployments/{path.endpointId}/"
+persist  = true
+merge    = "append"
+key      = "deploymentId"
+defaults = "stubs/defaults/deployment.json"
 ```
 
 ### Benefits

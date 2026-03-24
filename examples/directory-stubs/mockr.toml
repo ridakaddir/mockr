@@ -15,18 +15,19 @@ fallback = "list"
   [routes.cases.list]
   file = "stubs/users/"  # Directory path - aggregates all .json files
 
-# POST /users - Create new user (directory append)
+# POST /users - Create new user (directory append with defaults)
 [[routes]]
 method = "POST"
 match = "/users"
 fallback = "created"
 
   [routes.cases.created]
-  status = 201
-  file = "stubs/users/"  # Directory path - creates new file
-  persist = true
-  merge = "append"
-  key = "userId"        # Uses userId field as filename, generates UUID if missing
+  status   = 201
+  file     = "stubs/users/"              # Directory path - creates new file
+  persist  = true
+  merge    = "append"
+  key      = "userId"                    # Uses userId field as filename, generates UUID if missing
+  defaults = "stubs/defaults/user.json"  # Server-generated fields (userId, role, active, createdAt)
 
 # GET /users/{userId} - Get specific user (single file read)
 [[routes]]

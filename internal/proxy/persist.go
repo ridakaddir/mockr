@@ -1,9 +1,11 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ridakaddir/mockr/internal/config"
@@ -27,6 +29,8 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 
 	switch strings.ToLower(c.Merge) {
 	case "update":
+		// Apply defaults if specified (enrich incoming data before persisting).
+		incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
 		updated, err := persist.Update(filePath, incoming)
 		if err != nil {
 			if persist.IsNotFound(err) {
@@ -50,6 +54,8 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 			})
 			return true
 		}
+		// Apply defaults if specified (enrich incoming data before persisting).
+		incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
 		result, err := persist.AppendToDir(filePath, c.Key, incoming)
 		if err != nil {
 			logger.Error("persist append to dir", "dir", filePath, "err", err)
@@ -89,6 +95,52 @@ func resolveFilePath(filePath string, r *http.Request, bodyBytes []byte, configD
 		filePath = resolveDynamicFile(filePath, r, bodyBytes, routePattern, pathParams)
 	}
 	return absPath(filePath, configDir)
+}
+
+// loadDefaults reads a defaults JSON file, resolves template tokens ({{uuid}},
+// {{now}}, {{timestamp}}), and deep-merges the result under the incoming data
+// so that incoming (request body) fields win on conflicts.
+//
+// Returns incoming unchanged if defaults is empty or on any error (warnings logged).
+func loadDefaults(defaults string, incoming map[string]interface{},
+	r *http.Request, bodyBytes []byte, configDir, routePattern string,
+	pathParams map[string]string) map[string]interface{} {
+
+	if defaults == "" {
+		return incoming
+	}
+
+	defaultsPath := resolveFilePath(defaults, r, bodyBytes, configDir, routePattern, pathParams)
+
+	// Ensure resolved path stays within configDir to prevent directory traversal.
+	if configDir != "" {
+		absConfig, _ := filepath.Abs(configDir)
+		absDefaults, _ := filepath.Abs(defaultsPath)
+		if !strings.HasPrefix(absDefaults, absConfig+string(filepath.Separator)) && absDefaults != absConfig {
+			logger.Warn("persist defaults: path escapes config directory", "file", defaultsPath, "configDir", configDir)
+			return incoming
+		}
+	}
+
+	defaultsData, err := os.ReadFile(defaultsPath)
+	if err != nil {
+		logger.Warn("persist defaults: cannot read file", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	resolved, err := renderTemplate(string(defaultsData))
+	if err != nil {
+		logger.Warn("persist defaults: template error", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	var base map[string]interface{}
+	if err := json.Unmarshal([]byte(resolved), &base); err != nil {
+		logger.Warn("persist defaults: invalid JSON", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	return persist.DeepMerge(base, incoming)
 }
 
 // isDirectoryPath determines if a file path should be treated as a directory
