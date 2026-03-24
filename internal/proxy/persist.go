@@ -56,6 +56,22 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 		}
 		// Apply defaults if specified (enrich incoming data before persisting).
 		incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
+
+		// Key resolution: if the key field is configured but missing from the
+		// incoming record (after defaults), resolve it from path params, then
+		// wildcards, then query parameters. This allows named parameters like
+		// {endpointId} in the route match pattern to be used as the filename
+		// when the body doesn't contain the key field.
+		if c.Key != "" {
+			if v, exists := incoming[c.Key]; !exists || v == nil || fmt.Sprintf("%v", v) == "" {
+				if resolved, ok := extractValue("path", c.Key, r, bodyBytes, routePattern, pathParams); ok {
+					incoming[c.Key] = resolved
+				} else if resolved, ok := extractValue("query", c.Key, r, bodyBytes, routePattern, pathParams); ok {
+					incoming[c.Key] = resolved
+				}
+			}
+		}
+
 		result, err := persist.AppendToDir(filePath, c.Key, incoming)
 		if err != nil {
 			logger.Error("persist append to dir", "dir", filePath, "err", err)
