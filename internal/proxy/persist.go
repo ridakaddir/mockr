@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/ridakaddir/mockr/internal/config"
@@ -25,59 +26,58 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 	incoming := parseJSONBody(bodyBytes)
 
 	switch strings.ToLower(c.Merge) {
-	case "append":
-		if err := persist.Append(filePath, c.ArrayKey, incoming); err != nil {
-			logger.Error("persist append", "file", filePath, "err", err)
-			if persist.IsConfigError(err) {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			} else {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "stub file error"})
-			}
-			return true
-		}
-		logger.SetSource(w, logger.SourceStub)
-		writeJSON(w, c.StatusCode(), incoming)
-
-	case "replace":
-		keyVal := resolveKeyValue(c.Key, r, bodyBytes, routePattern, pathParams)
-		updated, err := persist.Replace(filePath, c.ArrayKey, c.Key, keyVal, incoming)
+	case "update":
+		updated, err := persist.Update(filePath, incoming)
 		if err != nil {
 			if persist.IsNotFound(err) {
-				writeJSON(w, http.StatusNotFound, map[string]string{
-					"error": "record not found",
-					"key":   c.Key,
-					"value": keyVal,
-				})
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found"})
+			} else if persist.IsConfigError(err) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			} else {
-				logger.Error("persist replace", "file", filePath, "err", err)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				logger.Error("persist update", "file", filePath, "err", err)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "stub file error"})
 			}
 			return true
 		}
 		logger.SetSource(w, logger.SourceStub)
 		writeJSON(w, c.StatusCode(), updated)
 
+	case "append":
+		if !isDirectoryPath(filePath, c.File) {
+			logger.Error("persist append", "file", filePath, "err", "append requires directory path")
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "merge=\"append\" requires file to point to a directory (path ending with /)",
+			})
+			return true
+		}
+		result, err := persist.AppendToDir(filePath, c.Key, incoming)
+		if err != nil {
+			logger.Error("persist append to dir", "dir", filePath, "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "stub directory error"})
+			return true
+		}
+		logger.SetSource(w, logger.SourceStub)
+		writeJSON(w, c.StatusCode(), result)
+
 	case "delete":
-		keyVal := resolveKeyValue(c.Key, r, bodyBytes, routePattern, pathParams)
-		if err := persist.Delete(filePath, c.ArrayKey, c.Key, keyVal); err != nil {
+		if err := persist.DeleteFile(filePath); err != nil {
 			if persist.IsNotFound(err) {
-				writeJSON(w, http.StatusNotFound, map[string]string{
-					"error": "record not found",
-					"key":   c.Key,
-					"value": keyVal,
-				})
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found"})
 			} else {
-				logger.Error("persist delete", "file", filePath, "err", err)
+				logger.Error("persist delete file", "file", filePath, "err", err)
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			}
 			return true
 		}
 		logger.SetSource(w, logger.SourceStub)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(c.StatusCode())
 
 	default:
 		logger.Warn("persist: unknown merge strategy", "merge", c.Merge)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("unknown merge strategy: %s", c.Merge)})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("unknown merge strategy %q. Valid options: update, append, delete", c.Merge),
+		})
 	}
 
 	return true
@@ -91,29 +91,17 @@ func resolveFilePath(filePath string, r *http.Request, bodyBytes []byte, configD
 	return absPath(filePath, configDir)
 }
 
-// resolveKeyValue finds the value for key using: named path params → path wildcard → body → query.
-func resolveKeyValue(key string, r *http.Request, bodyBytes []byte, routePattern string, pathParams map[string]string) string {
-	// 1. Try named path parameters first.
-	if pathParams != nil {
-		if v, ok := pathParams[key]; ok && v != "" {
-			return v
-		}
+// isDirectoryPath determines if a file path should be treated as a directory
+// for stub aggregation. Returns true if the path is an existing directory OR
+// if the original config path ended with "/" (indicating directory intent).
+func isDirectoryPath(resolvedPath, originalConfigFile string) bool {
+	info, err := os.Stat(resolvedPath)
+	if err == nil && info.IsDir() {
+		return true
 	}
-
-	// 2. Try path wildcard (existing behavior for backward compatibility).
-	if v, ok := extractWildcardValue(routePattern, r.URL.Path); ok && v != "" {
-		return v
+	// If path doesn't exist but original config indicated directory intent
+	if os.IsNotExist(err) && strings.HasSuffix(originalConfigFile, "/") {
+		return true
 	}
-
-	// 3. Try request body.
-	if v, found := extractBodyField(key, bodyBytes); found {
-		return v
-	}
-
-	// 4. Try query param.
-	if v := r.URL.Query().Get(key); v != "" {
-		return v
-	}
-
-	return ""
+	return false
 }

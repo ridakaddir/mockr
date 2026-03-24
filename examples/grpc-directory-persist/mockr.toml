@@ -1,0 +1,54 @@
+# gRPC Directory-Based Persistence Example
+#
+# This example demonstrates directory-based CRUD operations for gRPC services.
+# Each item is stored as a separate JSON file in the stubs/items/ directory.
+
+# ListItems - Aggregate all item files
+[[grpc_routes]]
+match = "/items.ItemService/ListItems"
+fallback = "list"
+
+  [grpc_routes.cases.list]
+  file = "stubs/items/"  # Directory aggregation
+
+# CreateItem - Create new item file
+[[grpc_routes]]
+match = "/items.ItemService/CreateItem"
+fallback = "created"
+
+  [grpc_routes.cases.created]
+  status = 0  # gRPC OK
+  file = "stubs/items/"
+  persist = true
+  merge = "append"
+  key = "itemId"  # Uses itemId field as filename, auto-generates if missing
+
+# GetItem - Read specific item file
+[[grpc_routes]]
+match = "/items.ItemService/GetItem"
+fallback = "item"
+
+  [grpc_routes.cases.item]
+  file = "stubs/items/{body.itemId}.json"  # Dynamic filename from request body
+
+# UpdateItem - Shallow merge into existing file
+[[grpc_routes]]
+match = "/items.ItemService/UpdateItem"
+fallback = "updated"
+
+  [grpc_routes.cases.updated]
+  status = 0  # gRPC OK
+  file = "stubs/items/{body.itemId}.json"
+  persist = true
+  merge = "update"  # Shallow merge
+
+# DeleteItem - Remove item file
+[[grpc_routes]]
+match = "/items.ItemService/DeleteItem"
+fallback = "deleted"
+
+  [grpc_routes.cases.deleted]
+  status = 0  # gRPC OK
+  file = "stubs/items/{body.itemId}.json"
+  persist = true
+  merge = "delete"  # Remove file

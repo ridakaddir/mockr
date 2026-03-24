@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package items;
+option go_package = "github.com/example/items";
+
+service ItemService {
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+  rpc GetItem(GetItemRequest) returns (Item);
+  rpc CreateItem(CreateItemRequest) returns (Item);
+  rpc UpdateItem(UpdateItemRequest) returns (Item);
+  rpc DeleteItem(DeleteItemRequest) returns (DeleteItemResponse);
+}
+
+message Item {
+  string item_id = 1;
+  string name = 2;
+  string description = 3;
+  double price = 4;
+  bool available = 5;
+  string created_at = 6;
+}
+
+message ListItemsRequest {
+  // Empty for simplicity
+}
+
+message ListItemsResponse {
+  repeated Item items = 1;
+}
+
+message GetItemRequest {
+  string item_id = 1;
+}
+
+message CreateItemRequest {
+  string name = 1;
+  string description = 2;
+  double price = 3;
+  bool available = 4;
+}
+
+message UpdateItemRequest {
+  string item_id = 1;
+  string name = 2;
+  string description = 3;
+  double price = 4;
+  bool available = 5;
+}
+
+message DeleteItemRequest {
+  string item_id = 1;
+}
+
+message DeleteItemResponse {
+  // Empty response
+}

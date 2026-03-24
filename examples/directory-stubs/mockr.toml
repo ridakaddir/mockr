@@ -1,0 +1,61 @@
+# Directory-Based Stub Storage Example
+# 
+# This example demonstrates the new directory-based approach where:
+# - Each resource is stored as a separate JSON file
+# - GET list operations aggregate all files in a directory
+# - POST/PATCH/DELETE operations work on individual files
+# - Auto-generates UUIDs for new resources when needed
+
+# GET /users - List all users (directory aggregation)
+[[routes]]
+method = "GET"
+match = "/users"
+fallback = "list"
+
+  [routes.cases.list]
+  file = "stubs/users/"  # Directory path - aggregates all .json files
+
+# POST /users - Create new user (directory append)
+[[routes]]
+method = "POST"
+match = "/users"
+fallback = "created"
+
+  [routes.cases.created]
+  status = 201
+  file = "stubs/users/"  # Directory path - creates new file
+  persist = true
+  merge = "append"
+  key = "userId"        # Uses userId field as filename, generates UUID if missing
+
+# GET /users/{userId} - Get specific user (single file read)
+[[routes]]
+method = "GET"
+match = "/users/{userId}"
+fallback = "user"
+
+  [routes.cases.user]
+  file = "stubs/users/{path.userId}.json"  # Dynamic filename based on path param
+
+# PATCH /users/{userId} - Update user (shallow merge)
+[[routes]]
+method = "PATCH"
+match = "/users/{userId}"
+fallback = "updated"
+
+  [routes.cases.updated]
+  file = "stubs/users/{path.userId}.json"
+  persist = true
+  merge = "update"      # Shallow merge - incoming fields overwrite existing
+
+# DELETE /users/{userId} - Delete user (remove file)
+[[routes]]
+method = "DELETE"
+match = "/users/{userId}"
+fallback = "deleted"
+
+  [routes.cases.deleted]
+  status = 204
+  file = "stubs/users/{path.userId}.json"
+  persist = true
+  merge = "delete"      # Remove the file from disk

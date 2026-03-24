@@ -24,27 +24,15 @@ examples/
 │   ├── orders.toml           # POST /api/orders — nested dot-notation body fields
 │   └── stubs/
 │
-├── persist/                  # Stateful CRUD (wrapped object mode)
-│   ├── todos.toml            # Full CRUD backed by stubs/todos.json
-│   └── stubs/
-│
-├── bare-array-persist/       # Stateful CRUD with bare arrays
-│   ├── mockr.toml            # Full CRUD — operates on bare array stubs
-│   └── stubs/
-│
-├── persist-comparison/       # Side-by-side persist mode comparison  
-│   ├── wrapped.toml          # Traditional wrapped object approach
-│   ├── bare.toml             # New bare array approach
-│   └── stubs/
+├── directory-stubs/          # Directory-based CRUD (one file per resource)
+│   ├── mockr.toml            # Full CRUD with directory aggregation + auto-ID
+│   └── stubs/users/          # One JSON file per user
 │
 ├── dynamic-files/            # {source.field} placeholders in file paths
 │   ├── mockr.toml            # GET /api/orders + POST /api/profile
 │   └── stubs/
 │
-├── full-crud/                # All features combined (blog posts API)
-│   ├── posts-read.toml       # GET /api/posts — filtering, simulation
-│   ├── posts-write.toml      # POST/PUT/PATCH/DELETE — persist + conditions
-│   └── stubs/
+
 │
 ├── transitions/              # Time-based response transitions
 │   └── orders.toml           # GET /orders/* — shipped → out_for_delivery → delivered
@@ -70,7 +58,7 @@ examples/
 │   ├── mockr.toml
 │   └── stubs/
 │
-└── grpc-persist/             # gRPC — stateful CRUD backed by a stub file
+└── grpc-directory-persist/   # gRPC — directory-based CRUD
     ├── items.proto
     ├── mockr.toml
     └── stubs/
@@ -124,63 +112,37 @@ http POST :4000/api/orders payment:='{"method":"card"}'                         
 
 ---
 
-## persist
+## directory-stubs
 
-A stateful todo list. All writes mutate `stubs/todos.json` on disk — the file is the source of truth between requests.
-
-```sh
-mockr --config examples/persist
-```
+Directory-based CRUD where each user is stored as a separate JSON file. Demonstrates auto-ID generation, directory aggregation, and individual file operations.
 
 ```sh
-http :4000/api/todos                                       # list
-http POST :4000/api/todos id=4 title="Review PR" done:=false  # create
-http PUT :4000/api/todos/2 id=2 title="Write tests" done:=true # replace
-http PATCH :4000/api/todos/1 done:=true                    # partial update
-http DELETE :4000/api/todos/3                              # delete
-http DELETE :4000/api/todos/99                             # → 404
-```
-
-Reset: `git checkout examples/persist/stubs/todos.json`
-
----
-
-## bare-array-persist
-
-A stateful todo list using **bare array mode** for true API contract compatibility. The stub file is a bare JSON array `[{...}]`, and responses match exactly.
-
-```sh
-mockr --config examples/bare-array-persist
+mockr --config examples/directory-stubs
 ```
 
 ```sh
-http :4000/api/todos                                       # returns: [{"id":"1",...}]
-http POST :4000/api/todos id=4 title="Review PR" done:=false  # appends to bare array
-http PUT :4000/api/todos/2 id=2 title="Write tests" done:=true # updates in bare array
-http DELETE :4000/api/todos/3                              # removes from bare array
+# List users (directory aggregation)
+http :8080/users                                           # returns: [{"userId":"1",...}, {"userId":"2",...}]
+
+# Get specific user (single file read)
+http :8080/users/1                                         # returns: {"userId":"1","name":"Alice Johnson",...}
+
+# Create user with explicit ID
+http POST :8080/users userId=4 name="Diana Wilson" email="diana@example.com" role=user
+
+# Create user with auto-generated ID (UUID injected)
+http POST :8080/users name="Eve Brown" email="eve@example.com" role=user
+
+# Update user (shallow merge into file)
+http PATCH :8080/users/1 email="alice.johnson@newdomain.com" active:=false
+
+# Delete user (remove file)
+http DELETE :8080/users/3
 ```
 
-**Key difference**: GET `/api/todos` returns `[{...}]` instead of `{"todos": [{...}]}`.
+**Benefits:** Each user is one file, version-control friendly, unlimited scalability, no array size limits.
 
-Reset: `git checkout examples/bare-array-persist/stubs/todos-bare.json`
-
----
-
-## persist-comparison
-
-Side-by-side demonstration of **wrapped object mode** vs **bare array mode** for persist operations.
-
-**Wrapped mode:**
-```sh
-mockr --config examples/persist-comparison/wrapped.toml    # GET returns {"todos": [...]}
-```
-
-**Bare array mode:**
-```sh  
-mockr --config examples/persist-comparison/bare.toml       # GET returns [...]
-```
-
-See `examples/persist-comparison/README.md` for detailed comparison and migration guidance.
+Reset: `git checkout examples/directory-stubs/stubs/users/`
 
 ---
 
@@ -213,48 +175,7 @@ http ':4000/api/orders?username=charlie'
 
 ---
 
-## full-crud
 
-A complete blog posts API combining all mockr features. Two config files loaded together from the same directory.
-
-```sh
-mockr --config examples/full-crud
-```
-
-**Read** (`posts-read.toml`):
-
-```sh
-http :4000/api/posts                        # all posts
-http ':4000/api/posts?status=published'     # filtered
-http ':4000/api/posts?simulate=slow'        # 3s delay (test loading state)
-http ':4000/api/posts?simulate=error'       # 500 (test error UI)
-```
-
-**Write** (`posts-write.toml`):
-
-```sh
-# Create (persisted to stubs/posts.json)
-http POST :4000/api/posts id=3 title="New post" body="Hello" author=charlie published:=false
-
-# Admin create (inline JSON with template tokens, not persisted)
-http POST :4000/api/posts X-User-Role:admin title="Admin post" body="Elevated"
-
-# Validation error — missing title
-http POST :4000/api/posts body="no title"
-
-# Update
-http PUT :4000/api/posts/2 id=2 title="Updated" body="..." author=bob published:=true
-
-# Delete
-http DELETE :4000/api/posts/3
-
-# Not found → 404
-http DELETE :4000/api/posts/99
-```
-
-Reset: `git checkout examples/full-crud/stubs/posts.json`
-
----
 
 ## openapi-generate
 
@@ -513,46 +434,51 @@ grpcurl -plaintext localhost:50051 describe products.ProductService
 
 ---
 
-## grpc-persist
+## grpc-directory-persist
 
-Stateful gRPC CRUD backed by `stubs/items.json`. All write operations mutate the file on disk — subsequent reads reflect the change immediately.
+gRPC directory-based CRUD where each item is stored as a separate JSON file. Demonstrates protobuf ↔ JSON conversion, directory aggregation, and auto-ID generation.
 
 ```sh
-mockr --config examples/grpc-persist \
-      --grpc-proto examples/grpc-persist/items.proto
+mockr --config examples/grpc-directory-persist \
+      --grpc-proto examples/grpc-directory-persist/items.proto
 ```
 
 ```sh
-# List all items (reads stubs/items.json)
+# List all items (directory aggregation)
 grpcurl -plaintext -d '{}' localhost:50051 items.ItemService/ListItems
 
-# Create a new item (appended to the items array)
+# Get specific item (single file read)  
+grpcurl -plaintext -d '{"itemId":"item-1"}' localhost:50051 items.ItemService/GetItem
+
+# Create item with explicit ID (creates item-3.json)
 grpcurl -plaintext \
-  -d '{"item_id":"item_004","name":"Widget D","status":"active","quantity":20}' \
+  -d '{"itemId":"item-3","name":"Laptop","description":"High-performance laptop","price":1299.99,"available":true}' \
   localhost:50051 items.ItemService/CreateItem
 
-# Update an item (merges fields into the matching record by itemId)
+# Create item with auto-generated ID (UUID injected)
 grpcurl -plaintext \
-  -d '{"item_id":"item_002","name":"Widget B Pro","status":"active","quantity":99}' \
+  -d '{"name":"Tablet","description":"Lightweight tablet","price":299.99,"available":true}' \
+  localhost:50051 items.ItemService/CreateItem
+
+# Update item (shallow merge into file)
+grpcurl -plaintext \
+  -d '{"itemId":"item-1","price":179.99,"available":false}' \
   localhost:50051 items.ItemService/UpdateItem
 
-# Delete an item (removes the record from the array)
+# Delete item (remove file)
 grpcurl -plaintext \
-  -d '{"item_id":"item_003"}' \
+  -d '{"itemId":"item-2"}' \
   localhost:50051 items.ItemService/DeleteItem
 
-# Confirm changes persisted
-grpcurl -plaintext -d '{}' localhost:50051 items.ItemService/ListItems
-
-# Delete a non-existent item → NOT_FOUND (gRPC code 5)
+# Delete non-existent item → NOT_FOUND (gRPC code 5)
 grpcurl -plaintext \
-  -d '{"item_id":"item_999"}' \
+  -d '{"itemId":"item-999"}' \
   localhost:50051 items.ItemService/DeleteItem
 ```
 
-Reset: `git checkout examples/grpc-persist/stubs/items.json`
+Reset: `git checkout examples/grpc-directory-persist/stubs/items/`
 
-**How it works:** the `key` field in each case config names the field in the **stored** record to match on (e.g. `key = "itemId"`). The key *value* is extracted from the incoming request body using the same snake_case → camelCase lookup as conditions, so `item_id` in the request matches `itemId` in the stub file.
+**Features:** Each item is one file, protobuf field mapping (`item_id` ↔ `itemId`), unlimited scalability.
 
 ---
 

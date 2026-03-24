@@ -1,0 +1,8 @@
+{
+  "itemId": "item-1",
+  "name": "Wireless Headphones",
+  "description": "High-quality wireless headphones with noise cancellation",
+  "price": 199.99,
+  "available": true,
+  "createdAt": "2024-01-15T10:30:00Z"
+}
