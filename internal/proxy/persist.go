@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ridakaddir/mockr/internal/config"
@@ -26,11 +27,10 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 	// Parse request body for incoming record.
 	incoming := parseJSONBody(bodyBytes)
 
-	// Apply defaults if specified (enrich incoming data before persisting).
-	incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
-
 	switch strings.ToLower(c.Merge) {
 	case "update":
+		// Apply defaults if specified (enrich incoming data before persisting).
+		incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
 		updated, err := persist.Update(filePath, incoming)
 		if err != nil {
 			if persist.IsNotFound(err) {
@@ -54,6 +54,8 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 			})
 			return true
 		}
+		// Apply defaults if specified (enrich incoming data before persisting).
+		incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
 		result, err := persist.AppendToDir(filePath, c.Key, incoming)
 		if err != nil {
 			logger.Error("persist append to dir", "dir", filePath, "err", err)
@@ -109,6 +111,16 @@ func loadDefaults(defaults string, incoming map[string]interface{},
 	}
 
 	defaultsPath := resolveFilePath(defaults, r, bodyBytes, configDir, routePattern, pathParams)
+
+	// Ensure resolved path stays within configDir to prevent directory traversal.
+	if configDir != "" {
+		absConfig, _ := filepath.Abs(configDir)
+		absDefaults, _ := filepath.Abs(defaultsPath)
+		if !strings.HasPrefix(absDefaults, absConfig+string(filepath.Separator)) && absDefaults != absConfig {
+			logger.Warn("persist defaults: path escapes config directory", "file", defaultsPath, "configDir", configDir)
+			return incoming
+		}
+	}
 
 	defaultsData, err := os.ReadFile(defaultsPath)
 	if err != nil {

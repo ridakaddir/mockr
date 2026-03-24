@@ -202,3 +202,47 @@ func TestDeepMergeDoesNotMutateInputs(t *testing.T) {
 	_, hasC = overlayNested["c"]
 	assert.False(t, hasC, "overlay should not be mutated")
 }
+
+func TestDeepMergeBaseOnlyNestedKeyIsolation(t *testing.T) {
+	// Nested map exists only in base (no key conflict).
+	// Mutating the result's copy must not affect base's original.
+	base := map[string]interface{}{
+		"onlyInBase": map[string]interface{}{
+			"x": "original",
+		},
+	}
+	overlay := map[string]interface{}{
+		"other": "value",
+	}
+
+	result := DeepMerge(base, overlay)
+
+	resultMap := result["onlyInBase"].(map[string]interface{})
+	resultMap["injected"] = "hacked"
+
+	baseMap := base["onlyInBase"].(map[string]interface{})
+	_, found := baseMap["injected"]
+	assert.False(t, found, "base nested map should not be affected by result mutation")
+}
+
+func TestDeepMergeOverlayOnlyNestedKeyIsolation(t *testing.T) {
+	// Nested map exists only in overlay (no key conflict).
+	// Mutating the result's copy must not affect overlay's original.
+	base := map[string]interface{}{
+		"other": "value",
+	}
+	overlay := map[string]interface{}{
+		"onlyInOverlay": map[string]interface{}{
+			"y": "original",
+		},
+	}
+
+	result := DeepMerge(base, overlay)
+
+	resultMap := result["onlyInOverlay"].(map[string]interface{})
+	resultMap["injected"] = "hacked"
+
+	overlayMap := overlay["onlyInOverlay"].(map[string]interface{})
+	_, found := overlayMap["injected"]
+	assert.False(t, found, "overlay nested map should not be affected by result mutation")
+}

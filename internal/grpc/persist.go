@@ -28,15 +28,14 @@ func (h *handler) applyGRPCPersist(
 	configDir := h.loader.ConfigDir()
 	filePath := resolveGRPCFilePath(c.File, reqMap, configDir)
 
-	// Apply defaults if specified (enrich incoming data before persisting).
-	reqMap = loadGRPCDefaults(c.Defaults, reqMap, reqMap, configDir)
-
 	// Note: Persist operations return the updated/created data but we ignore it
 	// because the gRPC handler sends an empty response for persist operations.
 	// This is by design - persist-enabled RPCs should use empty response messages.
 	switch strings.ToLower(c.Merge) {
 
 	case "update":
+		// Apply defaults if specified (enrich incoming data before persisting).
+		reqMap = loadGRPCDefaults(c.Defaults, reqMap, reqMap, configDir)
 		if _, err := persist.Update(filePath, reqMap); err != nil {
 			if persist.IsNotFound(err) {
 				logger.LogGRPC(fullMethod, codes.NotFound, time.Since(start), logger.SourceStub)
@@ -60,6 +59,8 @@ func (h *handler) applyGRPCPersist(
 			logger.LogGRPC(fullMethod, codes.InvalidArgument, time.Since(start), logger.SourceStub)
 			return codes.InvalidArgument, true
 		}
+		// Apply defaults if specified (enrich incoming data before persisting).
+		reqMap = loadGRPCDefaults(c.Defaults, reqMap, reqMap, configDir)
 		if _, err := persist.AppendToDir(filePath, c.Key, reqMap); err != nil {
 			logger.Error("grpc persist append to dir", "dir", filePath, "err", err)
 			logger.LogGRPC(fullMethod, codes.Internal, time.Since(start), logger.SourceStub)
@@ -114,6 +115,17 @@ func loadGRPCDefaults(defaults string, incoming map[string]interface{},
 	}
 
 	defaultsPath := resolveGRPCFilePath(defaults, reqMap, configDir)
+
+	// Ensure resolved path stays within configDir to prevent directory traversal.
+	if configDir != "" {
+		cleaned := filepath.Clean(defaultsPath)
+		absConfig, _ := filepath.Abs(configDir)
+		absDefaults, _ := filepath.Abs(cleaned)
+		if !strings.HasPrefix(absDefaults, absConfig+string(filepath.Separator)) && absDefaults != absConfig {
+			logger.Warn("grpc persist defaults: path escapes config directory", "file", defaultsPath, "configDir", configDir)
+			return incoming
+		}
+	}
 
 	defaultsData, err := os.ReadFile(defaultsPath)
 	if err != nil {

@@ -122,22 +122,22 @@ mockr --config examples/directory-stubs
 
 ```sh
 # List users (directory aggregation)
-http :8080/users                                           # returns: [{"userId":"1",...}, {"userId":"2",...}]
+http :4000/users                                           # returns: [{"userId":"1",...}, {"userId":"2",...}]
 
 # Get specific user (single file read)
-http :8080/users/1                                         # returns: {"userId":"1","name":"Alice Johnson",...}
+http :4000/users/1                                         # returns: {"userId":"1","name":"Alice Johnson",...}
 
 # Create user with explicit ID
-http POST :8080/users userId=4 name="Diana Wilson" email="diana@example.com" role=user
+http POST :4000/users userId=4 name="Diana Wilson" email="diana@example.com" role=user
 
 # Create user with auto-generated ID and defaults (userId, role, active, createdAt filled in)
-http POST :8080/users name="Eve Brown" email="eve@example.com"
+http POST :4000/users name="Eve Brown" email="eve@example.com"
 
 # Update user (shallow merge into file)
-http PATCH :8080/users/1 email="alice.johnson@newdomain.com" active:=false
+http PATCH :4000/users/1 email="alice.johnson@newdomain.com" active:=false
 
 # Delete user (remove file)
-http DELETE :8080/users/3
+http DELETE :4000/users/3
 ```
 
 **Benefits:** Each user is one file, version-control friendly, unlimited scalability, no array size limits.
