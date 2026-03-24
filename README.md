@@ -28,8 +28,9 @@
 ## Features
 
 - **Route-based mocking** — define routes with named response cases, switch between them by editing `fallback`
-- **Condition routing** — activate different cases based on request body fields, query params, or headers
-- **Dynamic file resolution** — serve `stubs/user-{query.username}-orders.json` resolved at request time
+- **Named path parameters** — extract values from URLs with `{name}` syntax for key resolution and dynamic files
+- **Condition routing** — activate different cases based on request body fields, query params, headers, or path parameters
+- **Dynamic file resolution** — serve `stubs/user-{query.username}-orders.json` or `stubs/user-{path.userId}-profile.json` resolved at request time
 - **Stateful mocks** — `POST`/`PUT`/`PATCH`/`DELETE` persist changes into stub files (append / replace / delete); supports both wrapped objects and bare arrays for API contract compatibility
 - **Directory config** — point `--config` at a folder and mockr loads and merges all config files in it
 - **Reverse proxy fallthrough** — unmatched routes forward to a real upstream API
@@ -47,6 +48,14 @@
 - **gRPC persist** — stateful CRUD: `append` / `replace` / `delete` mutations on stub JSON files, same as REST persist
 - **gRPC generate** — `mockr generate --proto` scaffolds `[[grpc_routes]]` config and stub JSON files from a `.proto` file
 - **gRPC reflection** — built-in server reflection so `grpcurl` and `grpc-ui` work out of the box
+
+---
+
+## 📖 Additional Documentation
+
+- **[`NAMED_PARAMETERS.md`](NAMED_PARAMETERS.md)** — Detailed implementation guide for named path parameters
+- **[`examples/README.md`](examples/README.md)** — Complete examples with `grpcurl` commands
+- **[`LICENSE`](LICENSE)** — MIT license terms
 
 ---
 
@@ -760,11 +769,135 @@ If the resolved file does not exist, mockr falls through to the next condition o
 
 ---
 
+## Named Path Parameters
+
+mockr supports `{name}` placeholders in route patterns to extract and use named path parameters for key resolution, conditions, and dynamic file paths.
+
+### Syntax
+
+Use curly braces to define named parameters that match exactly one path segment:
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/api/users/{userId}"
+enabled  = true
+fallback = "success"
+```
+
+### Mixed Patterns
+
+Named parameters can coexist with wildcard `*` patterns in the same route:
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/api/v1/*/environments/{envId}/endpoint/{endpointId}"
+enabled  = true
+fallback = "success"
+```
+
+### Dynamic File Resolution with Named Parameters
+
+Use `{path.paramName}` placeholders in file paths to create user-specific or resource-specific stub files:
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/api/users/{userId}/profile"
+enabled  = true
+fallback = "user_profile"
+
+  [routes.cases.user_profile]
+  status = 200
+  file   = "stubs/user-{path.userId}-profile.json"
+```
+
+**Request:** `GET /api/users/john123/profile`
+**Resolves to:** `stubs/user-john123-profile.json`
+
+### Persistence with Named Parameters
+
+Named path parameters have the **highest priority** in key resolution for persistence operations:
+
+```toml
+[[routes]]
+method   = "PUT"
+match    = "/api/users/{userId}/posts/{postId}"
+enabled  = true
+fallback = "update_post"
+
+  [routes.cases.update_post]
+  status = 200
+  file   = "stubs/posts.json"
+  persist = true
+  merge   = "replace"
+  key     = "postId"  # Extracted from {postId} in URL path
+  array_key = "posts"
+```
+
+### Key Resolution Priority
+
+When using persistence operations, key values are resolved in this order:
+
+1. **Named path parameters** — `{userId}`, `{postId}` from the URL path
+2. **Path wildcards** — existing `*` behavior (fallback)
+3. **Request body fields** — JSON field extraction
+4. **Query parameters** — URL query parameters
+
+### Conditions with Named Parameters
+
+Named path parameters can be used in conditions via the `path` source:
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/api/users/{userId}/orders"
+enabled  = true
+fallback = "default"
+
+  [[routes.conditions]]
+  source = "path"
+  field  = "userId"
+  op     = "eq"
+  value  = "vip-user"
+  case   = "vip_orders"
+
+  [routes.cases.vip_orders]
+  status = 200
+  file   = "stubs/vip-orders.json"
+
+  [routes.cases.default]
+  status = 200
+  file   = "stubs/regular-orders.json"
+```
+
+### Security Features
+
+Named parameter file resolution includes built-in security protections:
+
+- **Path traversal prevention** — `.` and `..` patterns are neutralized
+- **Hidden file protection** — leading dots in filenames are replaced
+- **Character sanitization** — unsafe characters are removed from file paths
+
+### Backward Compatibility
+
+Named path parameters are **100% backward compatible**:
+
+- All existing route patterns continue to work unchanged
+- Existing wildcard `*` behavior is preserved
+- No breaking changes to configuration format
+- Routes without named parameters use existing fast paths
+
+For detailed implementation information, see [`NAMED_PARAMETERS.md`](NAMED_PARAMETERS.md).
+
+---
+
 ## Stateful mocks (persist)
 
 When `persist: true`, mutating requests update the stub file on disk. Subsequent reads reflect the change.
 
-**Mockr supports two persist modes** to match different API response formats:
+**Mockr supports two persist modes** to match different API response formats. Choose the mode that matches your API's actual response structure for true contract compatibility:
 
 ### Wrapped Object Mode (Traditional)
 
@@ -886,20 +1019,26 @@ Error: array_key "items" not found in stub file. Available keys: ["data", "metad
 # Wrong field type
 Error: field "users" is not a JSON array (found string). 
 Ensure the field contains an array like: "users": [{...}, {...}]
+
+# Invalid JSON content
+Error: stub file contains null, expected JSON array or JSON object
+Error: stub file contains number, expected JSON array or JSON object
 ```
 
 ### When to Use Each Mode
 
-**Use Wrapped Object Mode when:**
-- Your real API returns `{"data": [...], "meta": {...}}`
-- You need multiple fields in responses
-- Working with existing wrapped configurations
-
-**Use Bare Array Mode when:**  
+**🎯 Use Bare Array Mode (Recommended for new projects):**
 - Your real API returns bare arrays: `[{}, {}]`
-- You want exact API contract compatibility
-- Building standard REST APIs
+- You want **exact API contract compatibility**
+- Building standard REST APIs following JSON:API or similar specs
 - You prefer simpler stub file management
+- Working with frontend frameworks that expect bare arrays
+
+**📦 Use Wrapped Object Mode when:**
+- Your real API returns `{"data": [...], "meta": {...}}`
+- You need multiple fields in responses (pagination, metadata)
+- Working with existing wrapped configurations
+- Legacy API compatibility requirements
 
 ### Examples
 
@@ -1158,13 +1297,19 @@ mockr --config examples/<name>
 | `examples/persist` | Stateful CRUD backed by stub files (wrapped object mode) |
 | `examples/bare-array-persist` | Stateful CRUD with bare array mode for API contract compatibility |
 | `examples/persist-comparison` | Side-by-side comparison of wrapped vs bare array persist modes |
-| `examples/dynamic-files` | `{source.field}` file path placeholders |
+| `examples/dynamic-files` | `{source.field}` file path placeholders and named path parameters |
 | `examples/full-crud` | All features combined — blog posts API |
+| `examples/transitions` | Time-based response transitions and state progression |
 | `examples/record-mode` | Proxy + auto-record workflow |
+| `examples/openapi-generate` | Generate config from OpenAPI spec (Petstore example) |
 | `examples/grpc-mock` | gRPC unary mock — named cases, error codes, template tokens |
 | `examples/grpc-conditions` | gRPC condition routing on request body fields |
 | `examples/grpc-proxy` | gRPC selective mock + transparent upstream proxy fallthrough |
 | `examples/grpc-persist` | gRPC stateful CRUD — append / replace / delete backed by a stub file |
+
+**Additional example files:**
+- `named-params-example.toml` — Standalone named path parameters demonstration
+- `dynamic-files-example.toml` — Dynamic file resolution patterns
 
 **HTTP examples:** run with `mockr --config examples/<name>`
 
@@ -1191,7 +1336,7 @@ mockr/
 │   │   ├── parser.go         # kin-openapi wrapper: load spec (file/URL), parse operations
 │   │   ├── synth.go          # OpenAPI schema → synthetic example JSON
 │   │   ├── writer.go         # Write TOML/YAML/JSON config + stub files (OpenAPI)
-│   │   └── proto_generator.go# Proto → grpc_routes config + stub files
+│   │   └── proto_generator.go# Proto → grpc_routes config + stub JSON files
 │   ├── grpc/
 │   │   ├── codec.go          # Raw-bytes passthrough codec (enables unknown-service handler)
 │   │   ├── descriptor.go     # Runtime proto registry (jhump/protoreflect, no protoc)
@@ -1204,23 +1349,29 @@ mockr/
 │   ├── logger/
 │   │   └── logger.go         # Pretty terminal logger (HTTP + gRPC, via=stub/proxy)
 │   ├── persist/
-│   │   └── persist.go        # Transport-agnostic stub file mutations (shared by HTTP + gRPC)
+│   │   ├── persist.go        # Transport-agnostic stub file mutations (shared by HTTP + gRPC)
+│   │   └── persist_test.go   # Comprehensive test coverage for persistence operations
 │   └── proxy/
 │       ├── server.go         # HTTP server + CORS middleware
 │       ├── handler.go        # Per-request dispatch
-│       ├── matcher.go        # Path matching (exact / wildcard / regex)
-│       ├── conditions.go     # Condition evaluation (body / query / header)
-│       ├── dynamic_file.go   # {source.field} placeholder resolution
+│       ├── matcher.go        # Path matching (exact / wildcard / regex / named params)
+│       ├── matcher_test.go   # Named parameters and pattern matching tests
+│       ├── conditions.go     # Condition evaluation (body / query / header / path)
+│       ├── dynamic_file.go   # {source.field} and {path.param} placeholder resolution
+│       ├── dynamic_file_test.go # Dynamic file resolution and security tests
 │       ├── mock.go           # Serve mock responses + template rendering
 │       ├── persist.go        # HTTP persist wrapper (uses internal/persist)
+│       ├── persist_test.go   # HTTP persistence integration tests
 │       ├── transitions.go    # Time-based response transition state
 │       ├── forward.go        # Reverse proxy to upstream
 │       └── record.go         # Record mode + --init scaffold
 ├── examples/
 │   ├── basic/                # HTTP — static stubs and named cases
 │   ├── conditions/           # HTTP — condition routing
-│   ├── persist/              # HTTP — stateful CRUD
-│   ├── dynamic-files/        # HTTP — {source.field} placeholders
+│   ├── persist/              # HTTP — stateful CRUD (wrapped object mode)
+│   ├── bare-array-persist/   # HTTP — stateful CRUD (bare array mode)
+│   ├── persist-comparison/   # HTTP — side-by-side persist mode comparison
+│   ├── dynamic-files/        # HTTP — {source.field} and named parameter placeholders
 │   ├── full-crud/            # HTTP — all features combined
 │   ├── transitions/          # HTTP — time-based response transitions
 │   ├── record-mode/          # HTTP — proxy + auto-record
@@ -1228,7 +1379,19 @@ mockr/
 │   ├── grpc-mock/            # gRPC — basic unary mock
 │   ├── grpc-conditions/      # gRPC — condition routing on body fields
 │   ├── grpc-proxy/           # gRPC — selective mock + upstream proxy fallthrough
-│   └── grpc-persist/         # gRPC — stateful CRUD backed by a stub file
+│   ├── grpc-persist/         # gRPC — stateful CRUD backed by a stub file
+│   ├── named-params-example.toml     # Standalone named parameters demo
+│   ├── dynamic-files-example.toml    # Standalone dynamic file demo
+│   └── README.md             # Example usage with grpcurl commands
+├── assets/
+│   ├── logo.svg              # mockr logo (light theme)
+│   └── logo-dark.svg         # mockr logo (dark theme)
+├── scripts/
+│   └── pre-push              # Git pre-push hook
+├── .github/workflows/
+│   ├── ci.yml                # Continuous integration pipeline
+│   └── release.yml           # Automated release builds
+├── NAMED_PARAMETERS.md       # Named path parameters implementation guide
 ├── Taskfile.yml              # Dev task runner
 ├── devbox.json               # Reproducible dev environment
 └── .goreleaser.yml           # Cross-platform release builds
@@ -1282,6 +1445,53 @@ go mod download
 go build -o mockr .
 ./mockr --init
 ./mockr --target https://jsonplaceholder.typicode.com --api-prefix /api
+```
+
+### Testing
+
+mockr has comprehensive test coverage across all major components:
+
+```sh
+task test                    # Run all tests with race detection
+go test ./... -race -v       # Verbose test output
+go test ./internal/proxy/... # Test specific package
+```
+
+**Test coverage includes:**
+- Unit tests for all internal packages (`*_test.go` files)
+- Named path parameter extraction and matching
+- Persistence operations (both wrapped and bare array modes)
+- Dynamic file resolution and security features
+- Condition evaluation and route matching
+- gRPC functionality and protocol handling
+
+### CI/CD Pipeline
+
+The project uses GitHub Actions for continuous integration and release automation:
+
+- **CI Workflow** (`.github/workflows/ci.yml`)
+  - Runs on push to `main` and all pull requests
+  - Tests on Linux and macOS
+  - Includes `go vet`, `golangci-lint`, and race condition detection
+  - Builds binary to ensure compilation success
+
+- **Release Workflow** (`.github/workflows/release.yml`)  
+  - Triggers on `v*` tag pushes
+  - Uses GoReleaser for cross-platform binary builds
+  - Automatically creates GitHub releases with binaries
+
+### Development Workflow
+
+```sh
+# Pre-commit hook (optional but recommended)
+ln -s ../../scripts/pre-push .git/hooks/pre-push
+
+# Full development cycle
+task fmt     # Format code
+task vet     # Static analysis  
+task lint    # golangci-lint
+task test    # Run tests
+task check   # All of the above in sequence
 ```
 
 ---
