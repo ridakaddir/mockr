@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -24,6 +25,9 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 
 	// Parse request body for incoming record.
 	incoming := parseJSONBody(bodyBytes)
+
+	// Apply defaults if specified (enrich incoming data before persisting).
+	incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
 
 	switch strings.ToLower(c.Merge) {
 	case "update":
@@ -89,6 +93,42 @@ func resolveFilePath(filePath string, r *http.Request, bodyBytes []byte, configD
 		filePath = resolveDynamicFile(filePath, r, bodyBytes, routePattern, pathParams)
 	}
 	return absPath(filePath, configDir)
+}
+
+// loadDefaults reads a defaults JSON file, resolves template tokens ({{uuid}},
+// {{now}}, {{timestamp}}), and deep-merges the result under the incoming data
+// so that incoming (request body) fields win on conflicts.
+//
+// Returns incoming unchanged if defaults is empty or on any error (warnings logged).
+func loadDefaults(defaults string, incoming map[string]interface{},
+	r *http.Request, bodyBytes []byte, configDir, routePattern string,
+	pathParams map[string]string) map[string]interface{} {
+
+	if defaults == "" {
+		return incoming
+	}
+
+	defaultsPath := resolveFilePath(defaults, r, bodyBytes, configDir, routePattern, pathParams)
+
+	defaultsData, err := os.ReadFile(defaultsPath)
+	if err != nil {
+		logger.Warn("persist defaults: cannot read file", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	resolved, err := renderTemplate(string(defaultsData))
+	if err != nil {
+		logger.Warn("persist defaults: template error", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	var base map[string]interface{}
+	if err := json.Unmarshal([]byte(resolved), &base); err != nil {
+		logger.Warn("persist defaults: invalid JSON", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	return persist.DeepMerge(base, incoming)
 }
 
 // isDirectoryPath determines if a file path should be treated as a directory

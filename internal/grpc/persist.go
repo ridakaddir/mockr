@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,9 @@ func (h *handler) applyGRPCPersist(
 ) (code codes.Code, handled bool) {
 	configDir := h.loader.ConfigDir()
 	filePath := resolveGRPCFilePath(c.File, reqMap, configDir)
+
+	// Apply defaults if specified (enrich incoming data before persisting).
+	reqMap = loadGRPCDefaults(c.Defaults, reqMap, reqMap, configDir)
 
 	// Note: Persist operations return the updated/created data but we ignore it
 	// because the gRPC handler sends an empty response for persist operations.
@@ -95,6 +99,41 @@ func isGRPCDirectoryPath(resolvedPath, originalConfigFile string) bool {
 		return true
 	}
 	return false
+}
+
+// loadGRPCDefaults reads a defaults JSON file, resolves template tokens ({{uuid}},
+// {{now}}, {{timestamp}}), and deep-merges the result under the incoming data
+// so that incoming (request body) fields win on conflicts.
+//
+// Returns incoming unchanged if defaults is empty or on any error (warnings logged).
+func loadGRPCDefaults(defaults string, incoming map[string]interface{},
+	reqMap map[string]interface{}, configDir string) map[string]interface{} {
+
+	if defaults == "" {
+		return incoming
+	}
+
+	defaultsPath := resolveGRPCFilePath(defaults, reqMap, configDir)
+
+	defaultsData, err := os.ReadFile(defaultsPath)
+	if err != nil {
+		logger.Warn("grpc persist defaults: cannot read file", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	resolved, err := renderGRPCTemplate(string(defaultsData))
+	if err != nil {
+		logger.Warn("grpc persist defaults: template error", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	var base map[string]interface{}
+	if err := json.Unmarshal([]byte(resolved), &base); err != nil {
+		logger.Warn("grpc persist defaults: invalid JSON", "file", defaultsPath, "err", err)
+		return incoming
+	}
+
+	return persist.DeepMerge(base, incoming)
 }
 
 // resolveGRPCFilePath resolves {body.field} placeholders in the file path and

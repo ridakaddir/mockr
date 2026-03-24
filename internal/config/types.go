@@ -72,9 +72,10 @@ type Case struct {
 	File     string `json:"file"      yaml:"file"      toml:"file"`
 	Delay    int    `json:"delay"     yaml:"delay"     toml:"delay"`
 	Persist  bool   `json:"persist"   yaml:"persist"   toml:"persist"`
-	Merge    string `json:"merge"     yaml:"merge"     toml:"merge"`     // append | replace | delete
+	Merge    string `json:"merge"     yaml:"merge"     toml:"merge"`     // append | update | delete
 	Key      string `json:"key"       yaml:"key"       toml:"key"`       // record lookup key
 	ArrayKey string `json:"array_key" yaml:"array_key" toml:"array_key"` // array field in stub JSON
+	Defaults string `json:"defaults"  yaml:"defaults"  toml:"defaults"`  // JSON file with default values for append/update
 }
 
 // StatusCode returns the HTTP status for a case, defaulting to 200.
