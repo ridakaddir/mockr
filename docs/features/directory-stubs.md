@@ -108,12 +108,49 @@ fallback = "deleted"
 
 ---
 
-## Auto-ID generation
+## Key resolution for filenames
 
-When `merge = "append"` and the request body is missing the `key` field, mockr auto-generates a UUID:
+When `merge = "append"`, the `key` field determines the filename. mockr resolves the value using this fallback chain:
+
+1. **Request body** — if the body contains the `key` field, that value is used as the filename
+2. **Named path parameters** — if the route uses `{paramName}` and the param name matches `key`, the URL value is used
+3. **Path wildcards** — the first `*` match from the URL path
+4. **Query parameters** — URL query parameter matching the `key` name
+5. **Auto-generated UUID** — if none of the above provide a value
+
+### Example: key from the request body
 
 ```sh
-# POST without userId
+curl -X POST localhost:4000/api/users -d '{"userId": "alice", "name": "Alice"}'
+# Creates file: stubs/users/alice.json
+```
+
+### Example: key from a named path parameter
+
+```toml
+[[routes]]
+method   = "POST"
+match    = "/api/endpoints/{endpointId}/publication"
+fallback = "published"
+
+  [routes.cases.published]
+  status  = 201
+  file    = "stubs/publications/"
+  persist = true
+  merge   = "append"
+  key     = "endpointId"
+```
+
+```sh
+curl -X POST localhost:4000/api/endpoints/ep-42/publication -d '{"subDomain": "gemma"}'
+# Creates file: stubs/publications/ep-42.json
+# The endpointId is extracted from the URL and injected into the saved record
+```
+
+### Example: auto-generated UUID fallback
+
+```sh
+# POST without userId and no matching path parameter
 curl -X POST localhost:4000/api/users -d '{"name": "New User"}'
 
 # Creates file: stubs/users/123e4567-e89b-12d3-a456-426614174000.json
