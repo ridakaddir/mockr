@@ -1,0 +1,79 @@
+name: npm publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.2.0)"
+        required: true
+        type: string
+      dry-run:
+        description: "Dry run (don't actually publish)"
+        required: false
+        type: boolean
+        default: false
+
+  # Automatically triggered when a new GitHub release is published
+  release:
+    types: [published]
+
+# Prevent concurrent publishes from conflicting
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # Required for npm provenance
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      # Use env vars instead of direct interpolation to prevent script injection.
+      # See: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            # Strip the leading 'v' from the tag (v0.1.0 -> 0.1.0)
+            VERSION="${TAG_NAME#v}"
+          else
+            VERSION="$INPUT_VERSION"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing version: $VERSION"
+
+      - name: Determine dry-run flag
+        id: flags
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_DRY_RUN" = "true" ]; then
+            echo "dry_run=--dry-run" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        env:
+          PUBLISH_VERSION: ${{ steps.version.outputs.version }}
+          DRY_RUN_FLAG: ${{ steps.flags.outputs.dry_run }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node npm/scripts/publish.js "$PUBLISH_VERSION" $DRY_RUN_FLAG
