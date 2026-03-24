@@ -1,0 +1,6 @@
+{
+  "userId": "{{uuid}}",
+  "role": "user",
+  "active": true,
+  "createdAt": "{{now}}"
+}
