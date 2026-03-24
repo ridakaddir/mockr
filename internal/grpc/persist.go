@@ -27,6 +27,9 @@ func (h *handler) applyGRPCPersist(
 	configDir := h.loader.ConfigDir()
 	filePath := resolveGRPCFilePath(c.File, reqMap, configDir)
 
+	// Note: Persist operations return the updated/created data but we ignore it
+	// because the gRPC handler sends an empty response for persist operations.
+	// This is by design - persist-enabled RPCs should use empty response messages.
 	switch strings.ToLower(c.Merge) {
 
 	case "update":
@@ -34,6 +37,11 @@ func (h *handler) applyGRPCPersist(
 			if persist.IsNotFound(err) {
 				logger.LogGRPC(fullMethod, codes.NotFound, time.Since(start), logger.SourceStub)
 				return codes.NotFound, true
+			}
+			if persist.IsConfigError(err) {
+				logger.Error("grpc persist update config error", "file", filePath, "err", err)
+				logger.LogGRPC(fullMethod, codes.InvalidArgument, time.Since(start), logger.SourceStub)
+				return codes.InvalidArgument, true
 			}
 			logger.Error("grpc persist update", "file", filePath, "err", err)
 			logger.LogGRPC(fullMethod, codes.Internal, time.Since(start), logger.SourceStub)

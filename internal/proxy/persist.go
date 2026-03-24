@@ -45,7 +45,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 	case "append":
 		if !isDirectoryPath(filePath, c.File) {
 			logger.Error("persist append", "file", filePath, "err", "append requires directory path")
-			writeJSON(w, http.StatusInternalServerError, map[string]string{
+			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "merge=\"append\" requires file to point to a directory (path ending with /)",
 			})
 			return true

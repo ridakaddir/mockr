@@ -45,7 +45,9 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 			body, err = persist.ReadDir(filePath)
 			if err != nil {
 				logger.Error("reading stub directory", "dir", filePath, "err", err)
-				http.Error(w, `{"error":"stub directory read error"}`, http.StatusInternalServerError)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{
+					"error": "stub directory read error",
+				})
 				return
 			}
 		} else {

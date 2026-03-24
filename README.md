@@ -984,8 +984,8 @@ When `merge = "append"` and the request body is missing the `key` field:
 # POST without userId
 curl -X POST /users -d '{"name": "New User"}'
 
-# Creates file: stubs/users/a1b2c3d4-5678-90ef-ghij-klmnopqrstuv.json
-# Response: {"userId": "a1b2c3d4-5678-90ef-ghij-klmnopqrstuv", "name": "New User"}
+# Creates file: stubs/users/123e4567-e89b-12d3-a456-426614174000.json
+# Response: {"userId": "123e4567-e89b-12d3-a456-426614174000", "name": "New User"}
 ```
 
 ### Nested Subdirectories

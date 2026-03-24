@@ -21,7 +21,7 @@ fallback = "created"
   file = "stubs/items/"
   persist = true
   merge = "append"
-  key = "itemId"  # Uses item_id field as filename, auto-generates if missing
+  key = "itemId"  # Uses itemId field as filename, auto-generates if missing
 
 # GetItem - Read specific item file
 [[grpc_routes]]

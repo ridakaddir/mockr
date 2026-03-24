@@ -14,13 +14,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// Package-level compiled regexp for filename sanitization
+var filenameUnsafeChars = regexp.MustCompile(`[^a-zA-Z0-9_\-.]`)
+
 // ReadDir aggregates all .json files in a directory into a JSON array.
 // Returns [] for empty or non-existent directories.
 func ReadDir(dirPath string) ([]byte, error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []byte("[]"), nil
+			return []byte("[]\n"), nil
 		}
 		return nil, fmt.Errorf("reading directory %q: %w", dirPath, err)
 	}
@@ -45,8 +48,7 @@ func ReadDir(dirPath string) ([]byte, error) {
 		items = append(items, item)
 	}
 
-	// Sort by filename for deterministic ordering
-	// (os.ReadDir already returns sorted entries, but this is explicit)
+	// os.ReadDir returns entries sorted by filename for deterministic ordering
 
 	result, err := json.MarshalIndent(items, "", "  ")
 	if err != nil {
@@ -154,8 +156,7 @@ func WriteStub(filePath string, data map[string]interface{}) error {
 // sanitizeFilename removes or replaces unsafe characters in filenames.
 func sanitizeFilename(filename string) string {
 	// Allow only alphanumeric, underscore, hyphen, and dot
-	safe := regexp.MustCompile(`[^a-zA-Z0-9_\-.]`)
-	return safe.ReplaceAllString(filename, "_")
+	return filenameUnsafeChars.ReplaceAllString(filename, "_")
 }
 
 // NotFoundError is returned when a file or record cannot be found.
