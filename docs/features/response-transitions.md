@@ -16,16 +16,16 @@ enabled  = true
 fallback = "shipped"
 
   [[routes.transitions]]
-  case  = "shipped"
-  after = 30          # seconds from first request
+  case     = "shipped"
+  duration = 30          # serve for 30 seconds
 
   [[routes.transitions]]
-  case  = "out_for_delivery"
-  after = 90          # seconds from first request
+  case     = "out_for_delivery"
+  duration = 60          # serve for 60 seconds
 
   [[routes.transitions]]
-  case  = "delivered"
-  # no after — terminal state
+  case     = "delivered"
+  # no duration — terminal state
 
   [routes.cases.shipped]
   status = 200
@@ -47,12 +47,12 @@ fallback = "shipped"
 The timer starts on the **first request** to the route:
 
 ```
-t = 0s   first request  → shipped
-t = 30s  next request   → out_for_delivery
-t = 90s  next request   → delivered  (terminal — stays here)
+t = 0s   first request  → shipped          (duration: 30s)
+t = 30s  next request   → out_for_delivery  (duration: 60s)
+t = 90s  next request   → delivered         (terminal — stays here)
 ```
 
-The `after` values are **cumulative** from the first request, not from the previous transition.
+Each `duration` value specifies **how long that state lasts**, not an absolute timestamp. Durations are accumulated internally to determine transition points.
 
 ---
 
@@ -61,7 +61,7 @@ The `after` values are **cumulative** from the first request, not from the previ
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `case` | string | yes | Case key to serve during this stage |
-| `after` | int | no | Seconds from first request before advancing. Omit on the last entry for a terminal state |
+| `duration` | int | no | How long this state lasts in seconds. Omit on the last entry for a terminal state |
 
 ---
 
@@ -70,7 +70,7 @@ The `after` values are **cumulative** from the first request, not from the previ
 - **Conditions take priority** — if the route also has [conditions](conditions.md), they are evaluated first. Transitions only activate when no condition matches
 - **Shared timeline per route pattern** — all requests to `GET /orders/*` share one clock regardless of the specific ID (`/orders/123` and `/orders/456` advance together)
 - **Hot reload resets** — editing the config file restarts the sequence from the beginning
-- **No looping** — transitions are one-way; the last entry without `after` is the terminal state
+- **No looping** — transitions are one-way; the last entry without `duration` is the terminal state
 
 ---
 
@@ -84,9 +84,9 @@ routes:
     fallback: shipped
     transitions:
       - case: shipped
-        after: 30
+        duration: 30
       - case: out_for_delivery
-        after: 90
+        duration: 60
       - case: delivered
     cases:
       shipped:

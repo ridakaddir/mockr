@@ -28,6 +28,8 @@ func (ts *grpcTransitionState) Reset() {
 }
 
 // resolve returns the active case name for a gRPC route with transitions.
+// Durations are relative: each entry's Duration specifies how long that state
+// lasts. They are accumulated into absolute thresholds at resolution time.
 func (ts *grpcTransitionState) resolve(route *config.GRPCRoute) string {
 	if len(route.Transitions) == 0 {
 		return ""
@@ -48,11 +50,15 @@ func (ts *grpcTransitionState) resolve(route *config.GRPCRoute) string {
 	// Default to terminal (last) entry.
 	current := route.Transitions[len(route.Transitions)-1].Case
 
+	cumulative := 0
 	for i := 0; i < len(route.Transitions)-1; i++ {
 		t := route.Transitions[i]
-		if t.After > 0 && elapsedSecs < t.After {
-			current = t.Case
-			break
+		if t.Duration > 0 {
+			cumulative += t.Duration
+			if elapsedSecs < cumulative {
+				current = t.Case
+				break
+			}
 		}
 	}
 

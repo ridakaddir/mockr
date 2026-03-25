@@ -39,15 +39,16 @@ func routeKey(route *config.Route) string {
 // Resolution logic:
 //  1. Record time.Now() as t0 on the very first request.
 //  2. elapsed = time.Since(t0)
-//  3. Walk transitions in order. Return the case for the first entry whose
-//     After threshold is still in the future (elapsedSecs < entry.After).
+//  3. Walk transitions in order, accumulating Duration values to compute
+//     absolute thresholds. Return the case for the first entry whose
+//     cumulative threshold is still in the future (elapsedSecs < cumulative).
 //     Once all thresholds are crossed, serve the terminal (last) entry.
 //
-// Example with after=[30, 90, terminal]:
+// Example with duration=[30, 60, terminal]:
 //
-//	elapsed < 30s       → transitions[0].Case  (shipped)
-//	30s ≤ elapsed < 90s → transitions[1].Case  (out_for_delivery)
-//	elapsed ≥ 90s       → transitions[2].Case  (delivered — terminal)
+//	elapsed < 30s        → transitions[0].Case  (shipped)
+//	30s ≤ elapsed < 90s  → transitions[1].Case  (out_for_delivery)  — cumulative 30+60
+//	elapsed ≥ 90s        → transitions[2].Case  (delivered — terminal)
 func (ts *transitionState) resolve(route *config.Route) string {
 	if len(route.Transitions) == 0 {
 		return ""
@@ -69,14 +70,19 @@ func (ts *transitionState) resolve(route *config.Route) string {
 	// Default to the terminal (last) entry — used when all thresholds are crossed.
 	current := route.Transitions[len(route.Transitions)-1].Case
 
-	// Walk non-terminal entries: return the first one whose After threshold is
-	// still in the future. Entries with After == 0 in a non-terminal position
+	// Walk non-terminal entries: accumulate durations to compute absolute
+	// thresholds. Return the first entry whose cumulative threshold is still
+	// in the future. Entries with Duration == 0 in a non-terminal position
 	// are skipped (they would lock the route permanently into that stage).
+	cumulative := 0
 	for i := 0; i < len(route.Transitions)-1; i++ {
 		t := route.Transitions[i]
-		if t.After > 0 && elapsedSecs < t.After {
-			current = t.Case
-			break
+		if t.Duration > 0 {
+			cumulative += t.Duration
+			if elapsedSecs < cumulative {
+				current = t.Case
+				break
+			}
 		}
 	}
 
