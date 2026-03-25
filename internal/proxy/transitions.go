@@ -65,7 +65,7 @@ func (ts *transitionState) resolve(route *config.Route) string {
 	ts.mu.Unlock()
 
 	elapsed := time.Since(t0)
-	elapsedSecs := int(elapsed.Seconds())
+	elapsedSecs := int64(elapsed.Seconds())
 
 	// Default to the terminal (last) entry — used when all thresholds are crossed.
 	current := route.Transitions[len(route.Transitions)-1].Case
@@ -73,12 +73,13 @@ func (ts *transitionState) resolve(route *config.Route) string {
 	// Walk non-terminal entries: accumulate durations to compute absolute
 	// thresholds. Return the first entry whose cumulative threshold is still
 	// in the future. Entries with Duration == 0 in a non-terminal position
-	// are skipped (they would lock the route permanently into that stage).
-	cumulative := 0
+	// are skipped, since they never become selectable under the
+	// elapsedSecs < cumulative rule (they are effectively no-op stages).
+	var cumulative int64
 	for i := 0; i < len(route.Transitions)-1; i++ {
 		t := route.Transitions[i]
 		if t.Duration > 0 {
-			cumulative += t.Duration
+			cumulative += int64(t.Duration)
 			if elapsedSecs < cumulative {
 				current = t.Case
 				break

@@ -45,7 +45,7 @@ type Route struct {
 // Transition defines one step in a time-based response sequence.
 type Transition struct {
 	Case     string `json:"case"     yaml:"case"     toml:"case"`
-	Duration int    `json:"duration" yaml:"duration" toml:"duration"` // how long this state lasts in seconds; 0 = terminal
+	Duration int    `json:"duration" yaml:"duration" toml:"duration"` // seconds this state lasts; omit or 0 on the last entry for a terminal state
 }
 
 // IsEnabled returns true if the route is enabled (defaults to true if not set).

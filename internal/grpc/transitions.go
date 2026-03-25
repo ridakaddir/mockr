@@ -45,16 +45,16 @@ func (ts *grpcTransitionState) resolve(route *config.GRPCRoute) string {
 	ts.mu.Unlock()
 
 	elapsed := time.Since(t0)
-	elapsedSecs := int(elapsed.Seconds())
+	elapsedSecs := int64(elapsed.Seconds())
 
 	// Default to terminal (last) entry.
 	current := route.Transitions[len(route.Transitions)-1].Case
 
-	cumulative := 0
+	var cumulative int64
 	for i := 0; i < len(route.Transitions)-1; i++ {
 		t := route.Transitions[i]
 		if t.Duration > 0 {
-			cumulative += t.Duration
+			cumulative += int64(t.Duration)
 			if elapsedSecs < cumulative {
 				current = t.Case
 				break
