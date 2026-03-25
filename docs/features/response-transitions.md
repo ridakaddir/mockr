@@ -4,9 +4,22 @@
 
 ---
 
-Automatically advance through a sequence of response cases over time. This is useful for simulating state changes like order fulfillment, deployment pipelines, or approval workflows.
+Automatically advance resources through a sequence of states over time. Useful for simulating order fulfillment, deployment pipelines, provisioning workflows, or any state machine.
 
-## Example
+mockr supports two transition modes:
+
+| Mode | Defined on | Timer starts | File mutated? | Use case |
+|---|---|---|---|---|
+| [Request-time](#request-time-transitions) | GET routes | First GET request | No | Read-only state progression |
+| [Background](#background-transitions-on-post) | POST routes | Resource creation | Yes | CRUD with lifecycle states |
+
+---
+
+## Request-time transitions
+
+Transitions on a **GET route** serve different cases based on elapsed time since the first request. The response changes automatically — no file mutation, no POST required.
+
+### Example
 
 ```toml
 [[routes]]
@@ -40,9 +53,7 @@ fallback = "shipped"
   json   = '{"number": "o123", "status": "delivered"}'
 ```
 
----
-
-## Timeline
+### Timeline
 
 The timer starts on the **first request** to the route:
 
@@ -52,29 +63,14 @@ t = 30s  next request   → out_for_delivery  (duration: 60s)
 t = 90s  next request   → delivered         (terminal — stays here)
 ```
 
-Each `duration` value specifies **how long that state lasts**, not an absolute timestamp. Durations are accumulated internally to determine transition points.
-
----
-
-## `transitions` fields
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `case` | string | yes | Case key to serve during this stage |
-| `duration` | int | no | How long this state lasts in seconds. Omit on the last entry for a terminal state |
-
----
-
-## Behaviour
+### Behaviour
 
 - **Conditions take priority** — if the route also has [conditions](conditions.md), they are evaluated first. Transitions only activate when no condition matches
 - **Shared timeline per route pattern** — all requests to `GET /orders/*` share one clock regardless of the specific ID (`/orders/123` and `/orders/456` advance together)
 - **Hot reload resets** — editing the config file restarts the sequence from the beginning
 - **No looping** — transitions are one-way; the last entry without `duration` is the terminal state
 
----
-
-## YAML equivalent
+### YAML equivalent
 
 ```yaml
 routes:
@@ -104,7 +100,7 @@ routes:
 
 ## Background transitions on POST
 
-Transitions can also be placed on **POST routes** to simulate resources that change state over time after creation. When a POST route with transitions creates a resource via `merge = "append"`, mockr spawns background goroutines that apply deferred file mutations at the configured intervals.
+Transitions on a **POST route** schedule background file mutations after a resource is created. The file on disk is updated in the background, so all subsequent reads (GET by ID, GET list) reflect the new state automatically.
 
 This is ideal for simulating deployment pipelines, provisioning workflows, or any resource that transitions through states after creation.
 
@@ -114,7 +110,7 @@ This is ideal for simulating deployment pipelines, provisioning workflows, or an
 # POST — creates deployment, starts background transition
 [[routes]]
 method   = "POST"
-match    = "/api/v1/*/environments/*/endpoint/{endpointId}/deployment"
+match    = "/deployments/{endpointId}"
 fallback = "created"
 
   [[routes.transitions]]
@@ -140,7 +136,7 @@ fallback = "created"
 # GET by ID — pure read, no transitions needed
 [[routes]]
 method   = "GET"
-match    = "/api/v1/*/environments/*/endpoint/{endpointId}/deployment/{deploymentId}"
+match    = "/deployments/{endpointId}/{deploymentId}"
 fallback = "success"
 
   [routes.cases.success]
@@ -150,7 +146,7 @@ fallback = "success"
 # GET list — directory aggregation, also sees the updated files
 [[routes]]
 method   = "GET"
-match    = "/api/v1/*/environments/*/endpoint/{endpointId}/deployment"
+match    = "/deployments/{endpointId}"
 fallback = "success"
 
   [routes.cases.success]
@@ -160,12 +156,21 @@ fallback = "success"
 
 With `defaults/deployment.json`:
 ```json
-{"status": "Deploying"}
+{"status": "Deploying", "region": "us-east-1", "createdAt": "{{now}}"}
 ```
 
 And `defaults/deployment-ready.json`:
 ```json
 {"status": "Ready"}
+```
+
+### Timeline
+
+The timer starts on **resource creation** (the POST request):
+
+```
+t = 0s   POST creates file  → {"status": "Deploying"}
+t = 15s  background mutation → merges {"status": "Ready"} into the file
 ```
 
 ### Flow
@@ -177,19 +182,58 @@ And `defaults/deployment-ready.json`:
 
 ### How it works
 
-- The transition entries define the timeline — the `duration` on the first entry determines how long before the next case fires
-- Transition cases (`ready`) that have `persist = true` and `defaults` are scheduled as background file mutations
-- The `fallback` case (`created`) is used for the actual POST response — transition case names do not need to correspond to request-time cases
-- Each POST creates independent timers — different deployments transition independently
+- The `fallback` case (`created`) handles the actual POST response
+- Transition case names (`deploying`, `ready`) are for the scheduler, not for request-time case selection — they don't need to match the `fallback`
+- Transition cases with `persist = true` and `defaults` are scheduled as background file mutations
+- Each POST creates **independent timers** — different resources transition independently
 - **Hot reload** cancels all pending background mutations
 - **Server shutdown** waits for pending mutations to finish gracefully
 - If the file is deleted before a transition fires, the mutation is skipped (logged as a warning)
 
+### Multiple transition stages
+
+Background transitions support multiple stages with cumulative durations:
+
+```toml
+[[routes.transitions]]
+case     = "provisioning"
+duration = 10               # first 10 seconds
+
+[[routes.transitions]]
+case     = "configuring"
+duration = 20               # next 20 seconds (fires at t=10s)
+
+[[routes.transitions]]
+case     = "ready"          # fires at t=30s
+
+[routes.cases.configuring]
+persist  = true
+merge    = "update"
+defaults = "defaults/configuring.json"
+
+[routes.cases.ready]
+persist  = true
+merge    = "update"
+defaults = "defaults/ready.json"
+```
+
 ---
 
-## Example
+## `transitions` fields
 
-See [`examples/transitions/`](../../examples/transitions/) for a complete working example.
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `case` | string | yes | Case key for this stage (request-time: served as the response; background: used for scheduling) |
+| `duration` | int | no | How long this state lasts in seconds. Omit on the last entry for a terminal state |
+
+---
+
+## Examples
+
+See [`examples/transitions/`](../../examples/transitions/) for complete working examples:
+
+- **`orders.toml`** — request-time transitions (GET returns different responses over time)
+- **`deployments.toml`** — background transitions (POST creates resource, file mutates on disk after delay)
 
 ---
 
