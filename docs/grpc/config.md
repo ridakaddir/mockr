@@ -74,15 +74,15 @@ enabled  = true
 fallback = "processing"
 
   [[grpc_routes.transitions]]
-  case  = "processing"
-  after = 10
+  case     = "processing"
+  duration = 10
 
   [[grpc_routes.transitions]]
-  case  = "shipped"
-  after = 60
+  case     = "shipped"
+  duration = 50
 
   [[grpc_routes.transitions]]
-  case  = "delivered"
+  case     = "delivered"
 
   [grpc_routes.cases.processing]
   status = 0

@@ -4,8 +4,8 @@
 # since the first request. No config changes or restarts needed.
 #
 # Timeline (from first request):
-#   t = 0s   → shipped         (immediately)
-#   t = 30s  → out_for_delivery
+#   t = 0s   → shipped         (lasts 30 seconds)
+#   t = 30s  → out_for_delivery (lasts 60 seconds)
 #   t = 90s  → delivered       (terminal — stays here)
 #
 # Run:
@@ -31,16 +31,16 @@ enabled  = true
 fallback = "shipped"
 
   [[routes.transitions]]
-  case  = "shipped"
-  after = 30            # advance after 30s from first request
+  case     = "shipped"
+  duration = 30            # serve for 30 seconds, then advance
 
   [[routes.transitions]]
-  case  = "out_for_delivery"
-  after = 90            # advance after 90s from first request
+  case     = "out_for_delivery"
+  duration = 60            # serve for 60 seconds, then advance
 
   [[routes.transitions]]
-  case  = "delivered"
-  # no after — terminal state
+  case     = "delivered"
+  # no duration — terminal state
 
   [routes.cases.shipped]
   status = 200
@@ -65,15 +65,15 @@ fallback = "shipped"
 # fallback = "processing"
 #
 #   [[routes.transitions]]
-#   case  = "processing"
-#   after = 3
+#   case     = "processing"
+#   duration = 3
 #
 #   [[routes.transitions]]
-#   case  = "shipped"
-#   after = 6
+#   case     = "shipped"
+#   duration = 3
 #
 #   [[routes.transitions]]
-#   case  = "delivered"
+#   case     = "delivered"
 #
 #   [routes.cases.processing]
 #   status = 200
