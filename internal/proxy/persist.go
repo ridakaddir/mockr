@@ -16,10 +16,12 @@ import (
 // applyPersist reads the stub file, mutates the array according to merge strategy,
 // writes the file back, and sends the appropriate HTTP response.
 //
-// Returns true if it handled the response (caller should not write anything else).
-func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes []byte, routePattern string, configDir string, pathParams map[string]string) bool {
+// Returns (handled, createdFilePath). handled is true if the response was written
+// (caller should not write anything else). createdFilePath is non-empty only for
+// merge="append" operations, providing the path of the newly created file.
+func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes []byte, routePattern string, configDir string, pathParams map[string]string) (bool, string) {
 	if !c.Persist {
-		return false
+		return false, ""
 	}
 
 	filePath := resolveFilePath(c.File, r, bodyBytes, configDir, routePattern, pathParams)
@@ -41,7 +43,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 				logger.Error("persist update", "file", filePath, "err", err)
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "stub file error"})
 			}
-			return true
+			return true, ""
 		}
 		logger.SetSource(w, logger.SourceStub)
 		writeJSON(w, c.StatusCode(), updated)
@@ -52,7 +54,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "merge=\"append\" requires file to point to a directory (path ending with /)",
 			})
-			return true
+			return true, ""
 		}
 		// Apply defaults if specified (enrich incoming data before persisting).
 		incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
@@ -72,14 +74,15 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 			}
 		}
 
-		result, err := persist.AppendToDir(filePath, c.Key, incoming)
+		createdPath, result, err := persist.AppendToDir(filePath, c.Key, incoming)
 		if err != nil {
 			logger.Error("persist append to dir", "dir", filePath, "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "stub directory error"})
-			return true
+			return true, ""
 		}
 		logger.SetSource(w, logger.SourceStub)
 		writeJSON(w, c.StatusCode(), result)
+		return true, createdPath
 
 	case "delete":
 		if err := persist.DeleteFile(filePath); err != nil {
@@ -89,7 +92,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 				logger.Error("persist delete file", "file", filePath, "err", err)
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			}
-			return true
+			return true, ""
 		}
 		logger.SetSource(w, logger.SourceStub)
 		w.Header().Set("Content-Type", "application/json")
@@ -102,7 +105,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 		})
 	}
 
-	return true
+	return true, ""
 }
 
 // resolveFilePath applies dynamic placeholders and configDir to a file path.
@@ -157,6 +160,52 @@ func loadDefaults(defaults string, incoming map[string]interface{},
 	}
 
 	return persist.DeepMerge(base, incoming)
+}
+
+// loadDefaultsStatic reads a defaults JSON file and returns its content as a map.
+// Unlike loadDefaults, it does not require an HTTP request context — it only
+// resolves the file path relative to configDir and runs template rendering.
+//
+// Used by the transition scheduler for deferred (background) file mutations
+// where no request is available.
+//
+// Returns nil if defaults is empty, the file cannot be read, or parsing fails.
+func loadDefaultsStatic(defaults, configDir string) map[string]interface{} {
+	if defaults == "" {
+		return nil
+	}
+
+	defaultsPath := absPath(defaults, configDir)
+
+	// Ensure resolved path stays within configDir to prevent directory traversal.
+	if configDir != "" {
+		absConfig, _ := filepath.Abs(configDir)
+		absDefaults, _ := filepath.Abs(defaultsPath)
+		if !strings.HasPrefix(absDefaults, absConfig+string(filepath.Separator)) && absDefaults != absConfig {
+			logger.Warn("deferred defaults: path escapes config directory", "file", defaultsPath, "configDir", configDir)
+			return nil
+		}
+	}
+
+	defaultsData, err := os.ReadFile(defaultsPath)
+	if err != nil {
+		logger.Warn("deferred defaults: cannot read file", "file", defaultsPath, "err", err)
+		return nil
+	}
+
+	resolved, err := renderTemplate(string(defaultsData))
+	if err != nil {
+		logger.Warn("deferred defaults: template error", "file", defaultsPath, "err", err)
+		return nil
+	}
+
+	var base map[string]interface{}
+	if err := json.Unmarshal([]byte(resolved), &base); err != nil {
+		logger.Warn("deferred defaults: invalid JSON", "file", defaultsPath, "err", err)
+		return nil
+	}
+
+	return base
 }
 
 // isDirectoryPath determines if a file path should be treated as a directory

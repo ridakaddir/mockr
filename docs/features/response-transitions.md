@@ -102,6 +102,91 @@ routes:
 
 ---
 
+## Background transitions on POST
+
+Transitions can also be placed on **POST routes** to simulate resources that change state over time after creation. When a POST route with transitions creates a resource via `merge = "append"`, mockr spawns background goroutines that apply deferred file mutations at the configured intervals.
+
+This is ideal for simulating deployment pipelines, provisioning workflows, or any resource that transitions through states after creation.
+
+### Example: deployment lifecycle
+
+```toml
+# POST — creates deployment, starts background transition
+[[routes]]
+method   = "POST"
+match    = "/api/v1/*/environments/*/endpoint/{endpointId}/deployment"
+fallback = "created"
+
+  [[routes.transitions]]
+  case     = "deploying"
+  duration = 15
+
+  [[routes.transitions]]
+  case     = "ready"
+
+  [routes.cases.created]
+  status   = 201
+  file     = "deployments/{path.endpointId}/"
+  persist  = true
+  merge    = "append"
+  key      = "deploymentId"
+  defaults = "defaults/deployment.json"
+
+  [routes.cases.ready]
+  persist  = true
+  merge    = "update"
+  defaults = "defaults/deployment-ready.json"
+
+# GET by ID — pure read, no transitions needed
+[[routes]]
+method   = "GET"
+match    = "/api/v1/*/environments/*/endpoint/{endpointId}/deployment/{deploymentId}"
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  file   = "deployments/{path.endpointId}/{path.deploymentId}.json"
+
+# GET list — directory aggregation, also sees the updated files
+[[routes]]
+method   = "GET"
+match    = "/api/v1/*/environments/*/endpoint/{endpointId}/deployment"
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  file   = "deployments/{path.endpointId}/"
+```
+
+With `defaults/deployment.json`:
+```json
+{"status": "Deploying"}
+```
+
+And `defaults/deployment-ready.json`:
+```json
+{"status": "Ready"}
+```
+
+### Flow
+
+1. **POST** creates the resource → responds 201 with `"status": "Deploying"`
+2. **Background goroutine** sleeps for 15 seconds
+3. **After 15s**, mockr merges `{"status": "Ready"}` into the file on disk
+4. **Any GET** (by ID or list) now returns `"status": "Ready"`
+
+### How it works
+
+- The transition entries define the timeline — the `duration` on the first entry determines how long before the next case fires
+- Transition cases (`ready`) that have `persist = true` and `defaults` are scheduled as background file mutations
+- The `fallback` case (`created`) is used for the actual POST response — transition case names do not need to correspond to request-time cases
+- Each POST creates independent timers — different deployments transition independently
+- **Hot reload** cancels all pending background mutations
+- **Server shutdown** waits for pending mutations to finish gracefully
+- If the file is deleted before a transition fires, the mutation is skipped (logged as a warning)
+
+---
+
 ## Example
 
 See [`examples/transitions/`](../../examples/transitions/) for a complete working example.

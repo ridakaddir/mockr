@@ -61,7 +61,7 @@ func (h *handler) applyGRPCPersist(
 		}
 		// Apply defaults if specified (enrich incoming data before persisting).
 		reqMap = loadGRPCDefaults(c.Defaults, reqMap, reqMap, configDir)
-		if _, err := persist.AppendToDir(filePath, c.Key, reqMap); err != nil {
+		if _, _, err := persist.AppendToDir(filePath, c.Key, reqMap); err != nil {
 			logger.Error("grpc persist append to dir", "dir", filePath, "err", err)
 			logger.LogGRPC(fullMethod, codes.Internal, time.Since(start), logger.SourceStub)
 			return codes.Internal, true

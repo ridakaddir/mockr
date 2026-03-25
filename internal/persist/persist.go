@@ -94,7 +94,9 @@ func Update(filePath string, incoming map[string]interface{}) (map[string]interf
 // the incoming record has that field, it's used as the filename. Otherwise,
 // a UUID is generated. If key is specified but missing from the record,
 // the UUID is injected into the record.
-func AppendToDir(dirPath, key string, incoming map[string]interface{}) (map[string]interface{}, error) {
+//
+// Returns the created file path, the (possibly enriched) record, and any error.
+func AppendToDir(dirPath, key string, incoming map[string]interface{}) (string, map[string]interface{}, error) {
 	var filename string
 
 	if key != "" {
@@ -116,15 +118,15 @@ func AppendToDir(dirPath, key string, incoming map[string]interface{}) (map[stri
 
 	// Ensure directory exists
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		return nil, fmt.Errorf("creating directory %q: %w", dirPath, err)
+		return "", nil, fmt.Errorf("creating directory %q: %w", dirPath, err)
 	}
 
 	filePath := filepath.Join(dirPath, filename+".json")
 	if err := WriteStub(filePath, incoming); err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
-	return incoming, nil
+	return filePath, incoming, nil
 }
 
 // DeleteFile removes a single JSON file from disk.
