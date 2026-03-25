@@ -1,0 +1,93 @@
+# Background transitions example — deployment lifecycle
+#
+# Demonstrates how transitions on a POST route cause the created resource
+# to change state on disk over time, without any follow-up request needed.
+#
+# Timeline (from POST creation):
+#   t = 0s   → POST creates file with "status": "Deploying"
+#   t = 15s  → background mutation merges "status": "Ready" into the file
+#
+# GET (by ID or list) always reads the file as-is, so clients see the
+# updated status automatically once the background transition fires.
+#
+# Run:
+#   mockr --config examples/transitions
+#
+# Try:
+#   # 1. Create a deployment
+#   http POST :4000/deployments/ep-demo \
+#     deploymentId=dep-001 name="my-app"
+#
+#   # 2. GET immediately → "Deploying"
+#   http :4000/deployments/ep-demo/dep-001
+#
+#   # 3. Wait 15+ seconds, GET again → "Ready"
+#   sleep 16 && http :4000/deployments/ep-demo/dep-001
+#
+#   # 4. List all deployments — also shows "Ready"
+#   http :4000/deployments/ep-demo
+#
+# Reset by touching the config file (triggers hot reload, cancels pending transitions):
+#   touch examples/transitions/deployments.toml
+
+# Create deployment — background transitions start here
+[[routes]]
+method   = "POST"
+match    = "/deployments/{endpointId}"
+enabled  = true
+fallback = "created"
+
+  [[routes.transitions]]
+  case     = "deploying"
+  duration = 15
+
+  [[routes.transitions]]
+  case     = "ready"
+
+  [routes.cases.created]
+  status   = 201
+  file     = "deployments/{path.endpointId}/"
+  persist  = true
+  merge    = "append"
+  key      = "deploymentId"
+  defaults = "defaults/deployment.json"
+
+  [routes.cases.ready]
+  persist  = true
+  merge    = "update"
+  defaults = "defaults/deployment-ready.json"
+
+# Get single deployment — pure read
+[[routes]]
+method   = "GET"
+match    = "/deployments/{endpointId}/{deploymentId}"
+enabled  = true
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  file   = "deployments/{path.endpointId}/{path.deploymentId}.json"
+
+# List deployments — directory aggregation
+[[routes]]
+method   = "GET"
+match    = "/deployments/{endpointId}"
+enabled  = true
+fallback = "success"
+
+  [routes.cases.success]
+  status = 200
+  file   = "deployments/{path.endpointId}/"
+
+# Delete deployment
+[[routes]]
+method   = "DELETE"
+match    = "/deployments/{endpointId}/{deploymentId}"
+enabled  = true
+fallback = "deleted"
+
+  [routes.cases.deleted]
+  status  = 200
+  file    = "deployments/{path.endpointId}/{path.deploymentId}.json"
+  persist = true
+  merge   = "delete"

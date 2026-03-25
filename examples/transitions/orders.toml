@@ -1,7 +1,8 @@
-# Response transitions example — simulate order lifecycle state changes over time
+# Request-time transitions example — simulate order lifecycle state changes
 #
-# The route automatically advances through cases based on elapsed time
-# since the first request. No config changes or restarts needed.
+# Each GET request checks elapsed time since the first request and serves
+# the appropriate case. The response changes automatically over time.
+# This is "request-time" mode: the transition is evaluated on each read.
 #
 # Timeline (from first request):
 #   t = 0s   → shipped         (lasts 30 seconds)

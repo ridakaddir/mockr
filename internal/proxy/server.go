@@ -22,9 +22,10 @@ type ServerOptions struct {
 
 // Server wraps the HTTP server and the config loader.
 type Server struct {
-	opts   ServerOptions
-	loader *config.Loader
-	srv    *http.Server
+	opts      ServerOptions
+	loader    *config.Loader
+	srv       *http.Server
+	scheduler *transitionScheduler
 }
 
 // NewServer initialises the proxy server.
@@ -38,19 +39,22 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		}
 	}
 
-	// transitions is created here so we can reference it in the onChange
-	// callback before the handler is fully constructed.
+	// transitions and scheduler are created here so we can reference them
+	// in the onChange callback before the handler is fully constructed.
 	ts := newTransitionState()
+	sched := newTransitionScheduler(context.Background())
 
 	loader, err := config.NewLoader(opts.ConfigPath, func(cfg *config.Config) {
 		logger.Info("config reloaded", "routes", len(cfg.Routes))
 		ts.Reset()
+		sched.Reset(context.Background())
 	})
 	if err != nil {
+		sched.Stop()
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	handler := NewHandlerWithTransitions(loader, rp, opts.RecordMode, opts.ApiPrefix, ts)
+	handler := NewHandlerWithTransitions(loader, rp, opts.RecordMode, opts.ApiPrefix, ts, sched)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
@@ -65,7 +69,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	return &Server{opts: opts, loader: loader, srv: srv}, nil
+	return &Server{opts: opts, loader: loader, srv: srv, scheduler: sched}, nil
 }
 
 // Loader returns the config loader, allowing other servers (e.g. gRPC) to
@@ -101,9 +105,11 @@ func (s *Server) Start(ctx context.Context) error {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = s.srv.Shutdown(shutCtx)
+		s.scheduler.Stop()
 		s.loader.Close()
 		return nil
 	case err := <-errCh:
+		s.scheduler.Stop()
 		s.loader.Close()
 		return err
 	}

@@ -61,7 +61,7 @@ func TestAppendKeyResolutionFromNamedPathParam(t *testing.T) {
 	)
 	w := httptest.NewRecorder()
 
-	handled := applyPersist(w, req, c, body, routePattern, "", pathParams)
+	handled, _ := applyPersist(w, req, c, body, routePattern, "", pathParams)
 	require.True(t, handled, "applyPersist should handle the request")
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -102,7 +102,7 @@ func TestAppendKeyResolutionBodyWinsOverPathParam(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/items/path-value-456/copies", nil)
 	w := httptest.NewRecorder()
 
-	handled := applyPersist(w, req, c, body, routePattern, "", pathParams)
+	handled, _ := applyPersist(w, req, c, body, routePattern, "", pathParams)
 	require.True(t, handled)
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -142,7 +142,7 @@ func TestAppendKeyResolutionFromQueryParam(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/entries?entryId=query-789", nil)
 	w := httptest.NewRecorder()
 
-	handled := applyPersist(w, req, c, body, routePattern, "", pathParams)
+	handled, _ := applyPersist(w, req, c, body, routePattern, "", pathParams)
 	require.True(t, handled)
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -177,7 +177,7 @@ func TestAppendKeyResolutionFallsBackToUUID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/records", nil)
 	w := httptest.NewRecorder()
 
-	handled := applyPersist(w, req, c, body, routePattern, "", pathParams)
+	handled, _ := applyPersist(w, req, c, body, routePattern, "", pathParams)
 	require.True(t, handled)
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -218,7 +218,7 @@ func TestAppendKeyResolutionFromWildcard(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/tenants/tenant-abc/resources", nil)
 	w := httptest.NewRecorder()
 
-	handled := applyPersist(w, req, c, body, routePattern, "", pathParams)
+	handled, _ := applyPersist(w, req, c, body, routePattern, "", pathParams)
 	require.True(t, handled)
 	assert.Equal(t, http.StatusCreated, w.Code)
 

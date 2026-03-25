@@ -248,14 +248,15 @@ func TestAppendToDirWithKey(t *testing.T) {
 		"name":   "Alice",
 	}
 
-	result, err := AppendToDir(dir, "userId", incoming)
+	createdPath, result, err := AppendToDir(dir, "userId", incoming)
 	require.NoError(t, err)
 
 	// Should return the incoming data unchanged
 	assert.Equal(t, incoming, result)
 
-	// Should create 123.json
+	// Should create 123.json and return the path
 	expectedPath := filepath.Join(dir, "123.json")
+	assert.Equal(t, expectedPath, createdPath)
 	assert.FileExists(t, expectedPath)
 
 	content := readJSONFile(t, expectedPath)
@@ -273,7 +274,7 @@ func TestAppendToDirAutoID(t *testing.T) {
 		"name": "Alice",
 	}
 
-	result, err := AppendToDir(dir, "userId", incoming)
+	_, result, err := AppendToDir(dir, "userId", incoming)
 	require.NoError(t, err)
 
 	// Should have injected a userId
@@ -297,7 +298,7 @@ func TestAppendToDirNoKey(t *testing.T) {
 		"name": "Alice",
 	}
 
-	result, err := AppendToDir(dir, "", incoming)
+	_, result, err := AppendToDir(dir, "", incoming)
 	require.NoError(t, err)
 
 	// Should return unchanged (no key injection)
@@ -329,7 +330,7 @@ func TestAppendToDirCreatesDir(t *testing.T) {
 		"name": "Alice",
 	}
 
-	_, err := AppendToDir(nonExistentDir, "id", incoming)
+	_, _, err := AppendToDir(nonExistentDir, "id", incoming)
 	require.NoError(t, err)
 
 	// Directory should now exist
@@ -348,7 +349,7 @@ func TestAppendToDirSanitizesFilename(t *testing.T) {
 		"name": "Alice",
 	}
 
-	_, err := AppendToDir(dir, "id", incoming)
+	_, _, err := AppendToDir(dir, "id", incoming)
 	require.NoError(t, err)
 
 	// Check what files were actually created

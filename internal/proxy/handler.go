@@ -16,6 +16,7 @@ type Handler struct {
 	rec         responseRecorder       // non-nil in record mode, created once
 	apiPrefix   string                 // stripped from request path before matching + forwarding
 	transitions *transitionState       // time-based transition state
+	scheduler   *transitionScheduler   // deferred file mutations after persist append
 }
 
 // configLoader abstracts config.Loader so it can be mocked in tests.
@@ -26,13 +27,15 @@ type configLoader interface {
 }
 
 // NewHandler builds a new Handler with a fresh transition state.
+// NOTE: The handler created this way has no scheduler (scheduler is nil).
+// Use NewHandlerWithTransitions when background transition mutations are needed.
 func NewHandler(loader configLoader, rp *httputil.ReverseProxy, recordMode bool, apiPrefix string) *Handler {
-	return NewHandlerWithTransitions(loader, rp, recordMode, apiPrefix, newTransitionState())
+	return NewHandlerWithTransitions(loader, rp, recordMode, apiPrefix, newTransitionState(), nil)
 }
 
-// NewHandlerWithTransitions builds a Handler with the provided transition state.
+// NewHandlerWithTransitions builds a Handler with the provided transition and scheduler state.
 // Used by NewServer to share the transition state with the config reload callback.
-func NewHandlerWithTransitions(loader configLoader, rp *httputil.ReverseProxy, recordMode bool, apiPrefix string, ts *transitionState) *Handler {
+func NewHandlerWithTransitions(loader configLoader, rp *httputil.ReverseProxy, recordMode bool, apiPrefix string, ts *transitionState, sched *transitionScheduler) *Handler {
 	// Normalise prefix: ensure it starts with / and has no trailing slash.
 	if apiPrefix != "" && !strings.HasPrefix(apiPrefix, "/") {
 		apiPrefix = "/" + apiPrefix
@@ -52,6 +55,7 @@ func NewHandlerWithTransitions(loader configLoader, rp *httputil.ReverseProxy, r
 		rec:         rec,
 		apiPrefix:   apiPrefix,
 		transitions: ts,
+		scheduler:   sched,
 	}
 }
 
@@ -112,7 +116,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Persist (mutating methods).
 		if c.Persist {
-			if handled := applyPersist(w, requestForExtraction, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams); handled {
+			handled, createdPath := applyPersist(w, requestForExtraction, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams)
+			if handled {
+				// If this was an append (resource creation) on a route with
+				// transitions, schedule deferred background mutations so the
+				// created file transitions on disk over time.
+				if createdPath != "" && len(route.Transitions) > 0 && h.scheduler != nil {
+					h.scheduler.Schedule(route, createdPath, h.loader.ConfigDir())
+				}
 				return
 			}
 		}
@@ -174,9 +185,15 @@ func (h *Handler) resolveCase(route *config.Route, r *http.Request, bodyBytes []
 	}
 
 	// 2. Transitions — resolve by elapsed time since first request.
+	// Only use the transition result if the case actually exists in the route;
+	// routes that define transitions purely for background scheduling (e.g. POST
+	// routes with deferred mutations) may have transition case names that don't
+	// correspond to request-time cases.
 	if len(route.Transitions) > 0 {
 		if caseName := h.transitions.resolve(route); caseName != "" {
-			return caseName
+			if _, ok := route.Cases[caseName]; ok {
+				return caseName
+			}
 		}
 	}
 

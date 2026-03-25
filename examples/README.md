@@ -207,14 +207,17 @@ The generated `mocks/` directory is gitignored — regenerate it any time. See [
 
 ## transitions
 
-Simulates an order lifecycle that automatically advances through states over time — no config changes or restarts needed.
+Two modes for simulating state changes over time.
 
 ```sh
 mockr --config examples/transitions
 ```
 
+### Request-time transitions (orders)
+
+Each GET evaluates elapsed time since the first request and serves the matching case. The response changes as time passes.
+
 ```sh
-# Hit the same endpoint and watch the status change as time passes
 http :4000/orders/o123    # t=0s  → shipped
 # wait 30 seconds
 http :4000/orders/o123    # t=30s → out_for_delivery
@@ -228,13 +231,32 @@ http :4000/orders/o123    # t=90s → delivered (stays here)
 watch -n 5 'http :4000/orders/o123'
 ```
 
-**Reset the timeline** by triggering a hot reload:
+### Background transitions (deployments)
+
+POST creates a resource, and mockr **mutates the file on disk** in the background after a delay. All reads (GET by ID, list) see the updated state.
+
+```sh
+# 1. Create a deployment
+http POST :4000/deployments/ep-demo \
+  deploymentId=dep-001 name="my-app"
+
+# 2. GET immediately → "Deploying"
+http :4000/deployments/ep-demo/dep-001
+
+# 3. Wait 15+ seconds, GET again → "Ready"
+sleep 16 && http :4000/deployments/ep-demo/dep-001
+
+# 4. List all — also shows "Ready"
+http :4000/deployments/ep-demo
+```
+
+### Reset the timeline
+
+Trigger a hot reload to cancel pending background transitions and restart request-time timers:
 
 ```sh
 touch examples/transitions/orders.toml
 ```
-
-The timer restarts from the next request.
 
 ---
 
