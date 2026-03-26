@@ -1237,3 +1237,53 @@ func TestResolveEachAndTemplate_ErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveEachAndTemplate_NilRefContext(t *testing.T) {
+	// Setup temporary directory with test files (minimal setup)
+	tempDir := t.TempDir()
+
+	// Create endpoints directory with one test file
+	endpointsDir := filepath.Join(tempDir, "stubs", "endpoints")
+	if err := os.MkdirAll(endpointsDir, 0755); err != nil {
+		t.Fatalf("creating endpoints directory: %v", err)
+	}
+
+	endpoint := `{"endpointId": "123", "name": "test"}`
+	if err := os.WriteFile(filepath.Join(endpointsDir, "123.json"), []byte(endpoint), 0644); err != nil {
+		t.Fatalf("writing endpoint: %v", err)
+	}
+
+	// Test $each + $template with nil RefContext (should not panic)
+	input := `{
+		"$each": "{{ref:stubs/endpoints/}}",
+		"$template": {
+			"id": "{.endpointId}",
+			"name": "{.name}"
+		}
+	}`
+
+	// This should not panic even with nil RefContext
+	result, err := resolveEachAndTemplateRefs([]byte(input), tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("resolving with nil RefContext: %v", err)
+	}
+
+	// Parse result to verify it worked
+	var parsed []interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	if len(parsed) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(parsed))
+	}
+
+	item, ok := parsed[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected object, got %T", parsed[0])
+	}
+
+	if item["id"] != "123" {
+		t.Errorf("expected id 123, got %v", item["id"])
+	}
+}

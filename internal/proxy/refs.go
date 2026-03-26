@@ -913,12 +913,22 @@ func processEachTemplateRef(eachRef, templateData interface{}, configDir string,
 
 // applyTemplateToItem applies a template to a single item with the item as context
 func applyTemplateToItem(item interface{}, templateData interface{}, configDir string, visited map[string]bool, refCtx *RefContext) (interface{}, error) {
+	// Prepare request context fields, guarding against nil refCtx
+	var pathParams map[string]string
+	var query url.Values
+	var headers http.Header
+	if refCtx != nil {
+		pathParams = refCtx.PathParams
+		query = refCtx.Query
+		headers = refCtx.Headers
+	}
+
 	// Create new RefContext with item data as Body for {.field} resolution
 	itemCtx := &RefContext{
 		Body:       make(map[string]interface{}),
-		PathParams: refCtx.PathParams,
-		Query:      refCtx.Query,
-		Headers:    refCtx.Headers,
+		PathParams: pathParams,
+		Query:      query,
+		Headers:    headers,
 	}
 
 	// Set item as the body context for {.field} placeholders
