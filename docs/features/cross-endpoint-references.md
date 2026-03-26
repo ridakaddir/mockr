@@ -285,6 +285,182 @@ match = "/endpoints"
 
 ---
 
+## Usage in Defaults Files
+
+Cross-endpoint references support **dynamic placeholders** in defaults files, allowing you to reference different stub files based on request data. This enables environment-specific, tenant-specific, or user-specific data loading in both regular operations and background transitions.
+
+### Dynamic Placeholder Syntax
+
+Use these placeholders inside `{{ref:...}}` tokens:
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{.field}` | Request body field | `{{ref:stubs/{.endpointId}/models/}}` |
+| `{.nested.field}` | Nested body field | `{{ref:stubs/{.config.env}/models/}}` |
+| `{path.param}` | URL path parameter | `{{ref:stubs/{path.tenantId}/users/}}` |
+| `{query.param}` | Query parameter | `{{ref:stubs/{query.version}/models/}}` |
+| `{header.Name}` | Request header | `{{ref:stubs/{header.X-Tenant-Id}/models/}}` |
+
+### Example: Environment-Specific Defaults
+
+**Config:**
+```toml
+[[routes]]
+method = "POST"
+match = "/api/endpoints"
+
+  [routes.cases.created]
+  status = 201
+  persist = true
+  merge = "append"
+  key = "endpointId"
+  defaults = "defaults/endpoint.json"
+```
+
+**`defaults/endpoint.json`:**
+```json
+{
+  "status": "Deploying",
+  "environment": "{.environment}",
+  "models": "{{ref:models/{.environment}/}}",
+  "config": "{{ref:configs/{path.tenantId}/{.environment}.json}}"
+}
+```
+
+**Request:**
+```bash
+POST /api/endpoints
+{
+  "endpointId": "ep-123",
+  "environment": "staging"
+}
+```
+
+This resolves to defaults that load:
+- `models/staging/` directory (environment-specific models)
+- `configs/tenant-a/staging.json` file (tenant + environment config)
+
+### Background Transitions
+
+Dynamic refs work in **background transitions** by storing the original request context when the transition is scheduled:
+
+**Config with transitions:**
+```toml
+[[routes]]
+method = "POST"
+match = "/api/deployments"
+fallback = "created"
+
+  [routes.transitions]
+  # Initial state (from request)
+  [[routes.transitions]]
+  case = "deploying"
+  duration = 30
+  
+  # After 30s, transition to ready
+  [[routes.transitions]]  
+  case = "ready"
+
+  [routes.cases.created]
+  status = 201
+  persist = true
+  merge = "append"  
+  defaults = "defaults/deployment.json"
+
+  [routes.cases.ready]
+  persist = true
+  merge = "update"
+  defaults = "defaults/deployment-ready.json"  # Uses dynamic refs!
+```
+
+**`defaults/deployment-ready.json`:**
+```json
+{
+  "status": "Ready",
+  "endpoint": "{{ref:endpoints/{.endpointId}/status.json}}",
+  "models": "{{ref:models/{.environment}/ready/}}"
+}
+```
+
+When the background transition fires after 30 seconds, the dynamic placeholders `{.endpointId}` and `{.environment}` are resolved using the **original request data** that was stored when the transition was scheduled.
+
+### Error Handling
+
+Dynamic refs use **strict error handling** for data integrity:
+
+- **Missing field**: Error if placeholder field not found in request
+- **Empty value**: Error if placeholder resolves to empty string  
+- **Missing file**: Error for non-existent file references
+- **Missing directory**: Returns empty array `[]` (standard behavior)
+
+```json
+// ❌ These cause errors:
+{"data": "{{ref:stubs/{.missingField}/}}"}      // Field not in request
+{"data": "{{ref:stubs/{.emptyField}/}}"}        // Field exists but empty
+{"data": "{{ref:stubs/{.field}/missing.json}}"} // File doesn't exist
+
+// ✅ This succeeds (returns empty array):
+{"data": "{{ref:stubs/{.field}/missing-dir/}}"} // Directory doesn't exist
+```
+
+### Advanced Example: Multi-Tenant API
+
+**Directory Structure:**
+```
+stubs/
+├── tenants/
+│   ├── acme/
+│   │   ├── prod/
+│   │   │   └── models/
+│   │   │       └── gpt-4.json
+│   │   └── staging/
+│   └── corp/
+└── defaults/
+    ├── tenant-deployment.json
+    └── tenant-endpoint.json
+```
+
+**`defaults/tenant-deployment.json`:**
+```json
+{
+  "tenantId": "{header.X-Tenant-Id}",
+  "environment": "{.environment}",
+  "models": "{{ref:tenants/{header.X-Tenant-Id}/{.environment}/models/}}",
+  "config": "{{ref:tenants/{header.X-Tenant-Id}/config.json}}",
+  "metadata": {
+    "createdAt": "{{now}}",
+    "deploymentId": "{{uuid}}"
+  }
+}
+```
+
+**Request:**
+```bash
+POST /api/deployments
+X-Tenant-Id: acme
+
+{
+  "endpointId": "ep-456", 
+  "environment": "prod"
+}
+```
+
+**Resolved defaults:**
+```json
+{
+  "tenantId": "acme",
+  "environment": "prod", 
+  "models": [{"id": "gpt-4", "name": "GPT-4", "status": "ready"}],
+  "config": {"tier": "premium", "limits": {"requests": 10000}},
+  "metadata": {
+    "createdAt": "2024-03-25T15:30:00Z",
+    "deploymentId": "550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+```
+
+---
+
 ## Best Practices
 
 1. **Organize by domain**: Group related stubs in directories (`users/`, `products/`, etc.)

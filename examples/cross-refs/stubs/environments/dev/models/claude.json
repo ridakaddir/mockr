@@ -1,0 +1,8 @@
+{
+  "id": "claude",
+  "name": "Claude 3",
+  "status": "active",
+  "version": "3.0", 
+  "tier": "experimental",
+  "maxTokens": 2048
+}

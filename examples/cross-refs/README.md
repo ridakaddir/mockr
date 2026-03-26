@@ -46,6 +46,17 @@ json = '''
 '''
 ```
 
+### 7. **Dynamic References in Defaults**
+Use request data to dynamically resolve refs in defaults files:
+```json
+{
+  "environment": "{path.env}",
+  "tenantId": "{path.tenantId}",
+  "models": "{{ref:environments/{path.env}/models/}}",
+  "config": "{{ref:tenants/{path.tenantId}/configs/{path.env}.json}}"
+}
+```
+
 ## Directory Structure
 
 ```
@@ -58,6 +69,15 @@ stubs/
 │   ├── prod.json        # Uses filter + template
 │   ├── dev.json         # Shows directory and filter refs
 │   └── staging.json     # Shows single file and provider filter
+├── environments/         # Environment-specific models for dynamic refs
+│   ├── prod/models/     # Production models
+│   ├── staging/models/  # Staging models  
+│   └── dev/models/      # Development models
+├── tenants/              # Tenant-specific configs for dynamic refs
+│   ├── acme/configs/    # ACME Corp tenant configs
+│   └── techcorp/configs/# TechCorp tenant configs
+├── defaults/             # Defaults files with dynamic refs
+│   └── endpoint.json    # Dynamic endpoint defaults
 └── templates/
     └── deployed-model.json  # Template for field transformation
 ```
@@ -122,6 +142,29 @@ Into:
    # Returns new endpoint with active models included
    ```
 
+   **Create environment-specific endpoint with dynamic defaults:**
+   ```bash
+   curl -X POST http://localhost:8080/api/acme/environments/prod/endpoints \
+     -H "Content-Type: application/json" \
+     -H "X-User-Id: alice" \
+     -d '{
+       "endpointId": "ep-123",
+       "region": "us-west-2", 
+       "version": "v2.1"
+     }'
+   # Creates endpoint with prod models and ACME tenant config
+   
+   curl -X POST http://localhost:8080/api/techcorp/environments/staging/endpoints \
+     -H "Content-Type: application/json" \
+     -H "X-User-Id: bob" \
+     -d '{
+       "endpointId": "ep-456",
+       "region": "eu-west-1",
+       "version": "v1.5"
+     }'
+   # Creates endpoint with staging models and TechCorp tenant config
+   ```
+
 ## Reference Syntax Summary
 
 | Syntax | Description |
@@ -132,6 +175,16 @@ Into:
 | `{{ref:path/?filter=nested.field:value}}` | Filter by nested field (dot notation) |
 | `{{ref:path/?template=tpl.json}}` | Transform using template |
 | `{{ref:path/?filter=status:active&template=tpl.json}}` | Both filter and template |
+
+## Dynamic Reference Placeholders (in defaults)
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{.field}` | Request body field | `{.environment}` → `"prod"` |
+| `{.nested.field}` | Nested body field | `{.config.env}` → `"staging"` |
+| `{path.param}` | URL path parameter | `{path.tenantId}` → `"acme"` |
+| `{query.param}` | Query parameter | `{query.version}` → `"v2"` |
+| `{header.Name}` | Request header | `{header.X-User-Id}` → `"alice"` |
 
 ## Key Benefits
 
