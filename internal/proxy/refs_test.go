@@ -1067,3 +1067,223 @@ func TestResolveSpreadRefs_IntegrationUseCase(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveEachAndTemplate_Basic(t *testing.T) {
+	// Setup temporary directory with test files
+	tempDir := t.TempDir()
+
+	// Create endpoints directory
+	endpointsDir := filepath.Join(tempDir, "stubs", "endpoints")
+	if err := os.MkdirAll(endpointsDir, 0755); err != nil {
+		t.Fatalf("creating endpoints directory: %v", err)
+	}
+
+	// Create deployments directory
+	deploymentsDir := filepath.Join(tempDir, "stubs", "deployments")
+	if err := os.MkdirAll(deploymentsDir, 0755); err != nil {
+		t.Fatalf("creating deployments directory: %v", err)
+	}
+
+	// Create template directory
+	templatesDir := filepath.Join(tempDir, "stubs", "templates")
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		t.Fatalf("creating templates directory: %v", err)
+	}
+
+	// Create test endpoint files
+	endpoint1 := `{
+		"endpointId": "123",
+		"name": "endpoint-1",
+		"status": "active"
+	}`
+	if err := os.WriteFile(filepath.Join(endpointsDir, "123.json"), []byte(endpoint1), 0644); err != nil {
+		t.Fatalf("writing endpoint1: %v", err)
+	}
+
+	endpoint2 := `{
+		"endpointId": "456",
+		"name": "endpoint-2", 
+		"status": "ready"
+	}`
+	if err := os.WriteFile(filepath.Join(endpointsDir, "456.json"), []byte(endpoint2), 0644); err != nil {
+		t.Fatalf("writing endpoint2: %v", err)
+	}
+
+	// Create test deployment files
+	deployment1Dir := filepath.Join(deploymentsDir, "123")
+	if err := os.MkdirAll(deployment1Dir, 0755); err != nil {
+		t.Fatalf("creating deployment1 directory: %v", err)
+	}
+	deploy1 := `{
+		"deploymentId": "dep-123",
+		"modelDisplayName": "Model 1",
+		"status": "running"
+	}`
+	if err := os.WriteFile(filepath.Join(deployment1Dir, "deploy1.json"), []byte(deploy1), 0644); err != nil {
+		t.Fatalf("writing deployment1: %v", err)
+	}
+
+	deployment2Dir := filepath.Join(deploymentsDir, "456")
+	if err := os.MkdirAll(deployment2Dir, 0755); err != nil {
+		t.Fatalf("creating deployment2 directory: %v", err)
+	}
+	deploy2 := `{
+		"deploymentId": "dep-456", 
+		"modelDisplayName": "Model 2",
+		"status": "deployed"
+	}`
+	if err := os.WriteFile(filepath.Join(deployment2Dir, "deploy2.json"), []byte(deploy2), 0644); err != nil {
+		t.Fatalf("writing deployment2: %v", err)
+	}
+
+	// Create template file
+	template := `{
+		"id": "{{.deploymentId}}",
+		"displayName": "{{.modelDisplayName}}",
+		"status": "{{.status}}"
+	}`
+	if err := os.WriteFile(filepath.Join(templatesDir, "deployed-model.json"), []byte(template), 0644); err != nil {
+		t.Fatalf("writing template: %v", err)
+	}
+
+	// Test $each + $template processing with $spread and deployedModels
+	input := `{
+		"$each": "{{ref:stubs/endpoints/}}",
+		"$template": {
+			"$spread": "{{.}}",
+			"deployedModels": "{{ref:stubs/deployments/{.endpointId}/?template=stubs/templates/deployed-model.json}}"
+		}
+	}`
+
+	result, err := resolveRefsWithContext([]byte(input), tempDir, make(map[string]bool), &RefContext{})
+	if err != nil {
+		t.Fatalf("resolving refs: %v", err)
+	}
+
+	// Parse result to verify structure
+	var parsed []interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	// Should have 2 endpoints
+	if len(parsed) != 2 {
+		t.Fatalf("expected 2 endpoints, got %d", len(parsed))
+	}
+
+	// Check first endpoint
+	endpoint1Result, ok := parsed[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("first endpoint should be object, got %T", parsed[0])
+	}
+
+	// Should have spread original properties
+	if endpoint1Result["endpointId"] != "123" {
+		t.Errorf("expected endpointId 123, got %v", endpoint1Result["endpointId"])
+	}
+	if endpoint1Result["name"] != "endpoint-1" {
+		t.Errorf("expected name endpoint-1, got %v", endpoint1Result["name"])
+	}
+
+	// Should have deployedModels array
+	deployedModels, ok := endpoint1Result["deployedModels"].([]interface{})
+	if !ok {
+		t.Fatalf("deployedModels should be array, got %T", endpoint1Result["deployedModels"])
+	}
+	if len(deployedModels) != 1 {
+		t.Fatalf("expected 1 deployed model, got %d", len(deployedModels))
+	}
+
+	// Check deployed model structure
+	deployedModel, ok := deployedModels[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("deployed model should be object, got %T", deployedModels[0])
+	}
+	if deployedModel["id"] != "dep-123" {
+		t.Errorf("expected id dep-123, got %v", deployedModel["id"])
+	}
+	if deployedModel["displayName"] != "Model 1" {
+		t.Errorf("expected displayName 'Model 1', got %v", deployedModel["displayName"])
+	}
+}
+
+func TestResolveEachAndTemplate_ErrorHandling(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{
+			name:    "$each without $template",
+			input:   `{"$each": "{{ref:stubs/endpoints/}}"}`,
+			wantErr: "$each field requires a corresponding $template field",
+		},
+		{
+			name:    "$each not a string",
+			input:   `{"$each": 123, "$template": {}}`,
+			wantErr: "$each field must be a string, got float64",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := resolveEachAndTemplateRefs([]byte(tt.input), t.TempDir(), make(map[string]bool), &RefContext{})
+			if err == nil {
+				t.Fatalf("expected error but got none")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+			}
+		})
+	}
+}
+
+func TestResolveEachAndTemplate_NilRefContext(t *testing.T) {
+	// Setup temporary directory with test files (minimal setup)
+	tempDir := t.TempDir()
+
+	// Create endpoints directory with one test file
+	endpointsDir := filepath.Join(tempDir, "stubs", "endpoints")
+	if err := os.MkdirAll(endpointsDir, 0755); err != nil {
+		t.Fatalf("creating endpoints directory: %v", err)
+	}
+
+	endpoint := `{"endpointId": "123", "name": "test"}`
+	if err := os.WriteFile(filepath.Join(endpointsDir, "123.json"), []byte(endpoint), 0644); err != nil {
+		t.Fatalf("writing endpoint: %v", err)
+	}
+
+	// Test $each + $template with nil RefContext (should not panic)
+	input := `{
+		"$each": "{{ref:stubs/endpoints/}}",
+		"$template": {
+			"id": "{.endpointId}",
+			"name": "{.name}"
+		}
+	}`
+
+	// This should not panic even with nil RefContext
+	result, err := resolveEachAndTemplateRefs([]byte(input), tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("resolving with nil RefContext: %v", err)
+	}
+
+	// Parse result to verify it worked
+	var parsed []interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	if len(parsed) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(parsed))
+	}
+
+	item, ok := parsed[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected object, got %T", parsed[0])
+	}
+
+	if item["id"] != "123" {
+		t.Errorf("expected id 123, got %v", item["id"])
+	}
+}

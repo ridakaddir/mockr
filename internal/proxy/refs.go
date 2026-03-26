@@ -78,19 +78,25 @@ func NewRefContext(r *http.Request, bodyBytes []byte, pathParams map[string]stri
 // resolution are processed by resolveRefs without a RefContext, so placeholders inside
 // those nested refs are treated literally.
 func resolveRefsWithContext(content []byte, configDir string, visited map[string]bool, ctx *RefContext) ([]byte, error) {
-	// Step 1: Resolve spread references first (they need to operate on the original JSON structure)
-	content, err := resolveSpreadRefs(content, configDir, visited, ctx)
+	// Step 1: Resolve $each and $template references first (they need to process before spread)
+	content, err := resolveEachAndTemplateRefs(content, configDir, visited, ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 2: Resolve dynamic placeholders in ref tokens in the remaining content
+	// Step 2: Resolve spread references (they need to operate on the original JSON structure)
+	content, err = resolveSpreadRefs(content, configDir, visited, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 3: Resolve dynamic placeholders in ref tokens in the remaining content
 	content, err = resolveDynamicInRefs(content, ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 3: Resolve the refs themselves (including any nested refs)
+	// Step 4: Resolve the refs themselves (including any nested refs)
 	return resolveRefs(content, configDir, visited)
 }
 
@@ -792,4 +798,271 @@ func processSpreadRef(refToken string, configDir string, visited map[string]bool
 	}
 
 	return obj, nil
+}
+
+// resolveEachAndTemplateRefs processes $each and $template fields in the content
+func resolveEachAndTemplateRefs(content []byte, configDir string, visited map[string]bool, refCtx *RefContext) ([]byte, error) {
+	// Skip processing if content is empty or whitespace-only
+	if len(content) == 0 || len(strings.TrimSpace(string(content))) == 0 {
+		return content, nil
+	}
+
+	// Quick check: if content doesn't contain "$each", return unchanged
+	if !bytes.Contains(content, []byte("$each")) {
+		return content, nil
+	}
+
+	// Parse the JSON to find $each fields
+	var parsed interface{}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		return nil, fmt.Errorf("parsing JSON for $each resolution: %w", err)
+	}
+
+	// Process $each fields recursively
+	result, err := processEachAndTemplateFields(parsed, configDir, visited, refCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Marshal the result back to JSON
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling $each result: %w", err)
+	}
+
+	return resultBytes, nil
+}
+
+// processEachAndTemplateFields recursively finds and processes $each and $template fields in the parsed JSON structure
+func processEachAndTemplateFields(data interface{}, configDir string, visited map[string]bool, refCtx *RefContext) (interface{}, error) {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		// Check if this object contains a $each field
+		if eachRef, hasEach := v["$each"]; hasEach {
+			// Must also have $template field
+			templateData, hasTemplate := v["$template"]
+			if !hasTemplate {
+				return nil, fmt.Errorf("$each field requires a corresponding $template field")
+			}
+
+			// Process the $each + $template pair
+			return processEachTemplateRef(eachRef, templateData, configDir, visited, refCtx)
+		}
+
+		// No $each field, process object recursively
+		result := make(map[string]interface{})
+		for key, value := range v {
+			processed, err := processEachAndTemplateFields(value, configDir, visited, refCtx)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = processed
+		}
+		return result, nil
+
+	case []interface{}:
+		// Process array elements recursively
+		result := make([]interface{}, len(v))
+		for i, item := range v {
+			processed, err := processEachAndTemplateFields(item, configDir, visited, refCtx)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = processed
+		}
+		return result, nil
+
+	default:
+		// Primitive values are returned unchanged
+		return data, nil
+	}
+}
+
+// processEachTemplateRef processes a $each + $template pair
+func processEachTemplateRef(eachRef, templateData interface{}, configDir string, visited map[string]bool, refCtx *RefContext) ([]interface{}, error) {
+	// $each must be a string (ref token)
+	eachRefStr, ok := eachRef.(string)
+	if !ok {
+		return nil, fmt.Errorf("$each field must be a string, got %T", eachRef)
+	}
+
+	// Resolve the $each reference to get array of items
+	itemsData, err := resolveEachRefToken(eachRefStr, configDir, visited, refCtx)
+	if err != nil {
+		return nil, fmt.Errorf("resolving $each reference %q: %w", eachRefStr, err)
+	}
+
+	// Ensure the result is an array
+	items, ok := itemsData.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("$each ref must resolve to an array, got %T", itemsData)
+	}
+
+	// Apply template to each item
+	result := make([]interface{}, len(items))
+	for i, item := range items {
+		processedItem, err := applyTemplateToItem(item, templateData, configDir, visited, refCtx)
+		if err != nil {
+			return nil, fmt.Errorf("applying template to item %d: %w", i, err)
+		}
+		result[i] = processedItem
+	}
+
+	return result, nil
+}
+
+// applyTemplateToItem applies a template to a single item with the item as context
+func applyTemplateToItem(item interface{}, templateData interface{}, configDir string, visited map[string]bool, refCtx *RefContext) (interface{}, error) {
+	// Prepare request context fields, guarding against nil refCtx
+	var pathParams map[string]string
+	var query url.Values
+	var headers http.Header
+	if refCtx != nil {
+		pathParams = refCtx.PathParams
+		query = refCtx.Query
+		headers = refCtx.Headers
+	}
+
+	// Create new RefContext with item data as Body for {.field} resolution
+	itemCtx := &RefContext{
+		Body:       make(map[string]interface{}),
+		PathParams: pathParams,
+		Query:      query,
+		Headers:    headers,
+	}
+
+	// Set item as the body context for {.field} placeholders
+	if itemMap, ok := item.(map[string]interface{}); ok {
+		itemCtx.Body = itemMap
+	}
+
+	// First, process special {{.}} placeholders in template
+	processedTemplate, err := resolveCurrentItemPlaceholders(templateData, item)
+	if err != nil {
+		return nil, fmt.Errorf("resolving {{.}} placeholders: %w", err)
+	}
+
+	// Process template with item context
+	templateBytes, err := json.Marshal(processedTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling template: %w", err)
+	}
+
+	// Resolve refs in template with item context - but skip $each processing to avoid infinite recursion
+	processedBytes, err := resolveRefsWithoutEachProcessing(templateBytes, configDir, visited, itemCtx)
+	if err != nil {
+		return nil, fmt.Errorf("processing template with item context: %w", err)
+	}
+
+	// Parse back to interface{}
+	var result interface{}
+	if err := json.Unmarshal(processedBytes, &result); err != nil {
+		return nil, fmt.Errorf("parsing processed template: %w", err)
+	}
+
+	return result, nil
+}
+
+// resolveCurrentItemPlaceholders resolves {{.}} placeholders in template with current item data
+func resolveCurrentItemPlaceholders(template interface{}, item interface{}) (interface{}, error) {
+	switch v := template.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{})
+		for key, value := range v {
+			// Special handling for $spread with {{.}}
+			if key == "$spread" && value == "{{.}}" {
+				// Replace with the item data directly
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					// Instead of $spread, merge the item properties directly
+					for k, v := range itemMap {
+						result[k] = v
+					}
+					continue // Skip adding the $spread field itself
+				} else {
+					return nil, fmt.Errorf("{{.}} can only be used with object items, got %T", item)
+				}
+			}
+
+			processed, err := resolveCurrentItemPlaceholders(value, item)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = processed
+		}
+		return result, nil
+
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, elem := range v {
+			processed, err := resolveCurrentItemPlaceholders(elem, item)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = processed
+		}
+		return result, nil
+
+	case string:
+		if v == "{{.}}" {
+			return item, nil
+		}
+		// Handle {.field} placeholders
+		if strings.HasPrefix(v, "{.") && strings.HasSuffix(v, "}") {
+			fieldPath := v[2 : len(v)-1] // Remove {. and }
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				return extractNestedValue(itemMap, fieldPath), nil
+			}
+		}
+		return v, nil
+
+	default:
+		return template, nil
+	}
+}
+
+// resolveEachRefToken resolves a single ref token for $each processing and returns the result
+func resolveEachRefToken(refToken string, configDir string, visited map[string]bool, refCtx *RefContext) (interface{}, error) {
+	// Create a temporary JSON structure with the ref token
+	temp := map[string]interface{}{
+		"temp": refToken,
+	}
+
+	tempBytes, err := json.Marshal(temp)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling temp JSON: %w", err)
+	}
+
+	// Resolve using existing ref resolution
+	processedBytes, err := resolveRefsWithContext(tempBytes, configDir, visited, refCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract the resolved value
+	var result map[string]interface{}
+	if err := json.Unmarshal(processedBytes, &result); err != nil {
+		return nil, err
+	}
+
+	return result["temp"], nil
+}
+
+// resolveRefsWithoutEachProcessing resolves refs but skips $each processing to avoid infinite recursion
+func resolveRefsWithoutEachProcessing(content []byte, configDir string, visited map[string]bool, ctx *RefContext) ([]byte, error) {
+	// Skip Step 1: $each processing (to avoid infinite recursion)
+
+	// Step 2: Resolve spread references (they need to operate on the original JSON structure)
+	content, err := resolveSpreadRefs(content, configDir, visited, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 3: Resolve dynamic placeholders in ref tokens in the remaining content
+	content, err = resolveDynamicInRefs(content, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 4: Resolve the refs themselves (including any nested refs)
+	return resolveRefs(content, configDir, visited)
 }
