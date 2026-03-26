@@ -1,0 +1,8 @@
+{
+  "id": "model-2",
+  "modelName": "Claude-3.5",
+  "version": "3.5",
+  "status": "active",
+  "provider": "Anthropic",
+  "capabilities": ["text-generation", "reasoning", "analysis"]
+}

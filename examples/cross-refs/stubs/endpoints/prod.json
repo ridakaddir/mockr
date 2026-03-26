@@ -1,0 +1,7 @@
+{
+  "id": "endpoint-prod",
+  "endpointName": "Production API",
+  "region": "us-east-1",
+  "status": "active",
+  "deployedModels": "{{ref:stubs/models/?filter=status:active&template=stubs/templates/deployed-model.json}}"
+}

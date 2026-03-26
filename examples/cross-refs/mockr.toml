@@ -1,0 +1,56 @@
+# Cross-Reference Example
+# Demonstrates referencing data from other endpoints/resources with {{ref:...}} syntax
+
+# GET /models - List all models
+[[routes]]
+method = "GET"
+match = "/models"
+fallback = "list"
+
+  [routes.cases.list]
+  file = "stubs/models/"
+
+# GET /models/{modelId} - Get specific model
+[[routes]]
+method = "GET"
+match = "/models/{modelId}"
+fallback = "model"
+
+  [routes.cases.model]
+  file = "stubs/models/{path.modelId}.json"
+
+# GET /endpoints - List all endpoints (with deployed models)
+[[routes]]
+method = "GET"
+match = "/endpoints"
+fallback = "list"
+
+  [routes.cases.list]
+  file = "stubs/endpoints/"
+
+# GET /endpoints/{endpointId} - Get specific endpoint
+[[routes]]
+method = "GET"
+match = "/endpoints/{endpointId}"
+fallback = "endpoint"
+
+  [routes.cases.endpoint]
+  file = "stubs/endpoints/{path.endpointId}.json"
+
+# POST /endpoints - Create new endpoint (demonstrates inline JSON with refs)
+[[routes]]
+method = "POST"
+match = "/endpoints"
+fallback = "created"
+
+  [routes.cases.created]
+  status = 201
+  json = '''
+  {
+    "id": "{{uuid}}",
+    "endpointName": "New Endpoint",
+    "region": "us-east-1",
+    "createdAt": "{{now}}",
+    "availableModels": "{{ref:stubs/models/?filter=status:active}}"
+  }
+  '''

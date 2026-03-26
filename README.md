@@ -32,6 +32,7 @@
 ## Features
 
 - **Route-based mocking** — define routes with named response cases and condition routing
+- **Cross-endpoint references** — `{{ref:...}}` syntax to reference data from other stub files with filtering and transformation
 - **gRPC mock & proxy** — mock unary gRPC methods from `.proto` files; no `protoc` or codegen required
 - **Named path parameters** — `{name}` syntax for path extraction, dynamic files, and persistence
 - **Directory-based stubs** — CRUD operations with one JSON file per resource

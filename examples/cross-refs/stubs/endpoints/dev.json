@@ -1,0 +1,8 @@
+{
+  "id": "endpoint-dev",
+  "endpointName": "Development API",
+  "region": "us-west-2",
+  "status": "active",
+  "allModels": "{{ref:stubs/models/}}",
+  "activeModelsOnly": "{{ref:stubs/models/?filter=status:active}}"
+}

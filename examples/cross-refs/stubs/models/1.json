@@ -1,0 +1,8 @@
+{
+  "id": "model-1",
+  "modelName": "GPT-4",
+  "version": "1.0",
+  "status": "active",
+  "provider": "OpenAI",
+  "capabilities": ["text-generation", "reasoning"]
+}
