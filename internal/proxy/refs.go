@@ -230,6 +230,69 @@ func resolveValue(key string, ctx *RefContext) (string, error) {
 	}
 }
 
+// resolveFileRefs processes {{ref:...}} tokens in JSON content, but only resolves
+// refs that point to single files (not directories). Directory refs (paths ending
+// with /) are preserved as raw tokens so they remain live references that resolve
+// dynamically on each read. This is used by loadDefaults to prevent baking
+// directory aggregation results (e.g. deployment lists) into persisted files.
+func resolveFileRefs(content []byte, configDir string, visited map[string]bool) ([]byte, error) {
+	if len(content) == 0 || len(strings.TrimSpace(string(content))) == 0 {
+		return content, nil
+	}
+
+	matches := refPattern.FindAllSubmatchIndex(content, -1)
+	if len(matches) == 0 {
+		return content, nil
+	}
+
+	// Process matches in reverse order to preserve indices.
+	result := content
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		token := string(content[match[2]:match[3]]) // path?params
+
+		// Extract the path portion (before any ?query params).
+		refPath := token
+		if idx := strings.Index(refPath, "?"); idx != -1 {
+			refPath = refPath[:idx]
+		}
+
+		// Skip directory refs — preserve them as live references.
+		if strings.HasSuffix(refPath, "/") {
+			continue
+		}
+
+		// Resolve file-based refs normally.
+		resolved, err := resolveRefToken(token, configDir, visited)
+		if err != nil {
+			return nil, fmt.Errorf("resolving ref %q: %w", token, err)
+		}
+
+		jsonBytes, err := json.Marshal(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling ref result: %w", err)
+		}
+
+		prefix := result[:match[0]]
+		suffix := result[match[1]:]
+		buf := make([]byte, 0, len(prefix)+len(jsonBytes)+len(suffix))
+		buf = append(buf, prefix...)
+		buf = append(buf, jsonBytes...)
+		buf = append(buf, suffix...)
+		result = buf
+	}
+
+	// Only validate JSON if we actually made replacements.
+	if len(result) != len(content) {
+		var validation interface{}
+		if err := json.Unmarshal(result, &validation); err != nil {
+			return nil, fmt.Errorf("invalid JSON after ref resolution: %w", err)
+		}
+	}
+
+	return result, nil
+}
+
 // resolveRefs processes all {{ref:...}} tokens in JSON content.
 // visited tracks paths to detect circular references.
 func resolveRefs(content []byte, configDir string, visited map[string]bool) ([]byte, error) {

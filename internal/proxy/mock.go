@@ -110,7 +110,21 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 }
 
 // renderTemplate processes {{uuid}}, {{now}}, {{timestamp}} tokens in a JSON string.
+// Any {{ref:...}} tokens are preserved intact through the rendering process.
 func renderTemplate(s string) (string, error) {
+	// Temporarily replace {{ref:...}} tokens so the Go template engine doesn't
+	// try to interpret them ({{ref would be parsed as calling an undefined "ref" func).
+	type placeholder struct {
+		key   string
+		value string
+	}
+	var placeholders []placeholder
+	preserved := refPattern.ReplaceAllStringFunc(s, func(match string) string {
+		key := fmt.Sprintf("__MOCKR_REF_%d__", len(placeholders))
+		placeholders = append(placeholders, placeholder{key: key, value: match})
+		return key
+	})
+
 	funcMap := template.FuncMap{
 		"uuid": func() string {
 			return uuid.New().String()
@@ -125,7 +139,7 @@ func renderTemplate(s string) (string, error) {
 
 	// Convert {{token}} to Go template syntax {{call token}}.
 	// Our tokens are zero-arg functions so we can call them directly.
-	tmpl, err := template.New("mock").Funcs(funcMap).Parse(s)
+	tmpl, err := template.New("mock").Funcs(funcMap).Parse(preserved)
 	if err != nil {
 		return s, err
 	}
@@ -135,7 +149,13 @@ func renderTemplate(s string) (string, error) {
 		return s, err
 	}
 
-	return buf.String(), nil
+	// Restore the {{ref:...}} tokens.
+	result := buf.String()
+	for _, p := range placeholders {
+		result = strings.Replace(result, p.key, p.value, 1)
+	}
+
+	return result, nil
 }
 
 // renderTemplateWithData processes both built-in tokens and request data placeholders.
