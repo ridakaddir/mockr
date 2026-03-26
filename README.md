@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/README.md"><strong>Full Documentation</strong></a>
+  <a href="https://ridakaddir.github.io/mockr"><strong>📖 Documentation Site</strong></a> | <a href="docs/README.md"><strong>Markdown Docs</strong></a>
 </p>
 
 ---

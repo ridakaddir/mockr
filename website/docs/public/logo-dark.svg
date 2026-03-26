@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 56" fill="none" role="img" aria-label="mockr logo">
+
+  <!-- Icon: double-arrow mirror (48×48 centred in a 56×56 slot) -->
+  <g transform="translate(4, 4)">
+
+    <!-- Back arrow: left-pointing (response), accent colour -->
+    <polyline
+      points="36,30 18,42 36,54"
+      stroke="#6366f1"
+      stroke-width="4.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <line
+      x1="18" y1="42"
+      x2="46" y2="42"
+      stroke="#6366f1"
+      stroke-width="4.5"
+      stroke-linecap="round"
+    />
+
+    <!-- Front arrow: right-pointing (request), primary colour -->
+    <polyline
+      points="12,2 30,14 12,26"
+      stroke="#818cf8"
+      stroke-width="4.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <line
+      x1="30" y1="14"
+      x2="2"  y2="14"
+      stroke="#818cf8"
+      stroke-width="4.5"
+      stroke-linecap="round"
+    />
+
+    <!-- Overlap accent dots -->
+    <circle cx="30" cy="28" r="3.5" fill="#818cf8" opacity="0.3"/>
+    <circle cx="18" cy="28" r="3.5" fill="#6366f1" opacity="0.3"/>
+
+  </g>
+
+  <!-- Wordmark: "mockr" -->
+  <text
+    x="76"
+    y="38"
+    font-family="'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif"
+    font-weight="700"
+    font-size="30"
+    letter-spacing="-0.8"
+    fill="#e0e7ff"
+  >mockr</text>
+
+</svg>
