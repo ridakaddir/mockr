@@ -13,7 +13,7 @@ Cross-endpoint references allow you to include data from other stub files in you
 {{ref:path?filter=field:value}}        # Filter by field equality
 {{ref:path?template=template.json}}    # Transform data shape using Go templates
 {{ref:path?filter=field:value&template=template.json}}  # Both filter and transform
-"...{{ref:path}}": ""                  # Spread object properties into containing object
+"$spread": "{{ref:path}}"              # Spread object properties into containing object
 ```
 
 ---
@@ -501,9 +501,9 @@ Object spreading allows you to merge the properties of a referenced object direc
 ### Syntax
 
 ```
-"...{{ref:path}}": ""                    # Spread all properties from referenced object
-"...{{ref:path?filter=field:value}}": "" # Spread filtered properties
-"...{{ref:path?template=template.json}}": "" # Spread transformed properties
+"$spread": "{{ref:path}}"                    # Spread all properties from referenced object
+"$spread": "{{ref:path?filter=field:value}}" # Spread filtered properties
+"$spread": "{{ref:path?template=template.json}}" # Spread transformed properties
 ```
 
 ### Basic Spreading
@@ -513,7 +513,7 @@ Spread all properties from a referenced file:
 ```json
 {
   "id": "123",
-  "...{{ref:stubs/endpoints/{path.endpointId}.json}}": "",
+  "$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
   "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?template=stubs/templates/deployed-model.json}}"
 }
 ```
@@ -546,7 +546,7 @@ Explicit properties override spread properties when there are conflicts:
 
 ```json
 {
-  "...{{ref:stubs/defaults/user.json}}": "",
+  "$spread": "{{ref:stubs/defaults/user.json}}",
   "status": "override"  // This overrides any "status" from the spread object
 }
 ```
@@ -557,7 +557,7 @@ Combine spreading with path parameters and other dynamic placeholders:
 
 ```json
 {
-  "...{{ref:stubs/endpoints/{path.endpointId}.json}}": "",
+  "$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
   "environment": "{path.env}",
   "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?filter=status:active}}"
 }
@@ -568,7 +568,7 @@ Combine spreading with path parameters and other dynamic placeholders:
 **1. Endpoint Enhancement**: Add computed fields to existing endpoint data
 ```json
 {
-  "...{{ref:stubs/endpoints/{path.endpointId}.json}}": "",
+  "$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
   "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/}}",
   "lastUpdated": "{{now}}"
 }
@@ -577,8 +577,8 @@ Combine spreading with path parameters and other dynamic placeholders:
 **2. Configuration Merging**: Combine base configuration with environment-specific overrides
 ```json
 {
-  "...{{ref:stubs/configs/base.json}}": "",
-  "...{{ref:stubs/configs/{path.env}.json}}": "",
+  "$spread": "{{ref:stubs/configs/base.json}}",
+  "environment": "{path.env}",
   "version": "1.0.0"
 }
 ```
@@ -586,9 +586,21 @@ Combine spreading with path parameters and other dynamic placeholders:
 **3. Response Composition**: Build complex responses from multiple data sources
 ```json
 {
-  "...{{ref:stubs/users/{path.userId}.json}}": "",
+  "$spread": "{{ref:stubs/users/{path.userId}.json}}",
   "permissions": "{{ref:stubs/roles/{.role}/permissions.json}}",
   "preferences": "{{ref:stubs/users/{path.userId}/preferences.json}}"
+}
+```
+
+**4. Nested Object Spreading**: Spread properties into nested structures
+```json
+{
+  "id": "123",
+  "profile": {
+    "$spread": "{{ref:stubs/profiles/{path.userId}.json}}",
+    "active": true
+  },
+  "status": "online"
 }
 ```
 
@@ -601,13 +613,30 @@ Combine spreading with path parameters and other dynamic placeholders:
 
 ### Error Handling
 
+**Invalid Syntax:**
 ```json
 {
-  "...{{ref:stubs/arrays/list.json}}": ""  // ERROR: Cannot spread array
+  "$spread": "invalid-value"  // ERROR: Must be {{ref:...}} token
 }
 ```
 
-The above will result in an error: `spread ref must resolve to an object, got []interface {}`
+**Non-Object Reference:**
+```json
+{
+  "$spread": "{{ref:stubs/arrays/list.json}}"  // ERROR: Cannot spread array
+}
+```
+
+The above will result in an error: `$spread ref must resolve to an object, got []interface {}`
+
+**Invalid Type:**
+```json
+{
+  "$spread": 123  // ERROR: Must be string
+}
+```
+
+Result: `$spread field must be a string, got int`
 
 ---
 

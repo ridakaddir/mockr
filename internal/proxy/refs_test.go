@@ -616,7 +616,7 @@ func TestResolveSpreadRefs_BasicSpread(t *testing.T) {
 	// Test basic spreading
 	content := []byte(`{
 		"id": "123",
-		"...{{ref:source.json}}": "",
+		"$spread": "{{ref:source.json}}",
 		"status": "active"
 	}`)
 
@@ -663,7 +663,7 @@ func TestResolveSpreadRefs_PropertyOverride(t *testing.T) {
 	// Test property override (explicit properties should override spread)
 	content := []byte(`{
 		"id": "123",
-		"...{{ref:source.json}}": "",
+		"$spread": "{{ref:source.json}}",
 		"status": "active"
 	}`)
 
@@ -717,7 +717,7 @@ func TestResolveSpreadRefs_WithPathParams(t *testing.T) {
 
 	// Test spread with path parameters (simulating user's use case)
 	content := []byte(`{
-		"...{{ref:endpoints/{path.endpointId}.json}}": "",
+		"$spread": "{{ref:endpoints/{path.endpointId}.json}}",
 		"deployedModels": "{{ref:deployments/{path.endpointId}/}}"
 	}`)
 
@@ -765,14 +765,14 @@ func TestResolveSpreadRefs_NonObjectError(t *testing.T) {
 	// Test spreading from non-object should error
 	content := []byte(`{
 		"id": "123",
-		"...{{ref:array.json}}": ""
+		"$spread": "{{ref:array.json}}"
 	}`)
 
 	_, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), nil)
 	if err == nil {
 		t.Fatalf("expected error when trying to spread non-object")
 	}
-	if !strings.Contains(err.Error(), "spread ref must resolve to an object") {
+	if !strings.Contains(err.Error(), "$spread ref must resolve to an object") {
 		t.Errorf("expected specific error about non-object, got: %v", err)
 	}
 }
@@ -807,6 +807,96 @@ func TestResolveSpreadRefs_EmptyContent(t *testing.T) {
 
 	if string(result) != string(content) {
 		t.Errorf("empty content should remain unchanged")
+	}
+}
+
+func TestResolveSpreadRefs_NewSyntaxValidation(t *testing.T) {
+	// Test that $spread field must contain a {{ref:...}} token
+	tempDir := t.TempDir()
+
+	// Test with invalid $spread value (not a ref token)
+	content := []byte(`{
+		"id": "123",
+		"$spread": "invalid-value"
+	}`)
+
+	_, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error for invalid $spread value")
+	}
+	if !strings.Contains(err.Error(), "$spread value must be a {{ref:...}} token") {
+		t.Errorf("expected specific error about invalid token, got: %v", err)
+	}
+
+	// Test with non-string $spread value
+	content2 := []byte(`{
+		"id": "123",
+		"$spread": 123
+	}`)
+
+	_, err = resolveSpreadRefs(content2, tempDir, make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error for non-string $spread value")
+	}
+	if !strings.Contains(err.Error(), "$spread field must be a string") {
+		t.Errorf("expected specific error about string type, got: %v", err)
+	}
+}
+
+func TestResolveSpreadRefs_NestedSpread(t *testing.T) {
+	// Test that $spread works in nested objects
+	tempDir := t.TempDir()
+
+	// Create source files
+	sourceFile := filepath.Join(tempDir, "user.json")
+	sourceData := `{"name": "John", "role": "admin"}`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	// Test nested spreading
+	content := []byte(`{
+		"id": "123",
+		"profile": {
+			"$spread": "{{ref:user.json}}",
+			"active": true
+		},
+		"status": "online"
+	}`)
+
+	result, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Parse result
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	// Verify structure
+	if parsed["id"] != "123" {
+		t.Errorf("expected id to be preserved")
+	}
+	if parsed["status"] != "online" {
+		t.Errorf("expected status to be preserved")
+	}
+
+	profile, ok := parsed["profile"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected profile to be an object")
+	}
+
+	// Verify spread properties are in nested object
+	if profile["name"] != "John" {
+		t.Errorf("expected name from spread in nested object")
+	}
+	if profile["role"] != "admin" {
+		t.Errorf("expected role from spread in nested object")
+	}
+	if profile["active"] != true {
+		t.Errorf("expected explicit property in nested object")
 	}
 }
 
@@ -880,7 +970,7 @@ func TestResolveSpreadRefs_IntegrationUserCase(t *testing.T) {
 
 	// User's desired JSON structure using spread syntax
 	content := []byte(`{
-		"...{{ref:stubs/endpoints/{path.endpointId}.json}}": "",
+		"$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
 		"deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?template=stubs/templates/deployed-model.json}}"
 	}`)
 
