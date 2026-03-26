@@ -122,7 +122,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				// transitions, schedule deferred background mutations so the
 				// created file transitions on disk over time.
 				if createdPath != "" && len(route.Transitions) > 0 && h.scheduler != nil {
-					h.scheduler.Schedule(route, createdPath, h.loader.ConfigDir())
+					// Create RefContext to capture request data for dynamic refs in transition defaults
+					refCtx := NewRefContext(requestForExtraction, bodyBytes, pathParams)
+					h.scheduler.Schedule(route, createdPath, h.loader.ConfigDir(), refCtx)
 				}
 				return
 			}

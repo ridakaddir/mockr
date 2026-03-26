@@ -51,12 +51,13 @@ func newTransitionScheduler(parent context.Context) *transitionScheduler {
 //
 // filePath is the absolute path to the file created by the append operation.
 // configDir is needed to resolve relative defaults file paths.
+// refCtx is the request context needed to resolve dynamic placeholders in defaults files.
 //
 // Only transition cases (beyond the initial/fallback case) that have
 // persist=true, merge="update", and a non-empty defaults path are scheduled.
 // Entries with Duration <= 0 in a non-terminal position are skipped (same
 // semantics as request-time resolve).
-func (s *transitionScheduler) Schedule(route *config.Route, filePath, configDir string) {
+func (s *transitionScheduler) Schedule(route *config.Route, filePath, configDir string, refCtx *RefContext) {
 	if len(route.Transitions) < 2 {
 		return // need at least an initial + one transition case
 	}
@@ -91,7 +92,7 @@ func (s *transitionScheduler) Schedule(route *config.Route, filePath, configDir 
 					"case", t.Case, "merge", c.Merge)
 			} else if cumulative > 0 {
 				delay := time.Duration(cumulative) * time.Second
-				s.schedule(delay, filePath, c, configDir)
+				s.schedule(delay, filePath, c, configDir, refCtx)
 			}
 		}
 
@@ -108,7 +109,7 @@ func (s *transitionScheduler) Schedule(route *config.Route, filePath, configDir 
 //
 // Uses time.NewTimer instead of time.After so the timer can be stopped
 // and garbage-collected promptly when the context is cancelled.
-func (s *transitionScheduler) schedule(delay time.Duration, filePath string, c config.Case, configDir string) {
+func (s *transitionScheduler) schedule(delay time.Duration, filePath string, c config.Case, configDir string, refCtx *RefContext) {
 	s.mu.Lock()
 	gen := s.gen
 	gen.wg.Add(1)
@@ -123,8 +124,12 @@ func (s *transitionScheduler) schedule(delay time.Duration, filePath string, c c
 		select {
 		case <-timer.C:
 			// Load defaults and apply the mutation.
-			incoming := loadDefaultsStatic(c.Defaults, configDir)
-			if len(incoming) == 0 {
+			incoming, err := loadDefaultsStatic(c.Defaults, configDir, make(map[string]bool), refCtx)
+			if err != nil {
+				logger.Error("deferred transition: loading defaults failed", "err", err)
+				return
+			}
+			if incoming == nil || len(incoming) == 0 {
 				logger.Warn("deferred transition: no defaults to apply",
 					"file", filePath, "defaults", c.Defaults)
 				return

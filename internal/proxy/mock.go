@@ -25,6 +25,12 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 		time.Sleep(time.Duration(c.Delay) * time.Second)
 	}
 
+	// Create RefContext for dynamic placeholder resolution in refs
+	refCtx := NewRefContext(r, bodyBytes, pathParams)
+
+	// Create shared visited map for circular detection across stub and defaults
+	visited := make(map[string]bool)
+
 	// Determine response body.
 	var body []byte
 	var err error
@@ -65,7 +71,7 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 		}
 
 		// Resolve cross-references in file content
-		body, err = resolveRefs(body, configDir, make(map[string]bool))
+		body, err = resolveRefsWithContext(body, configDir, visited, refCtx)
 		if err != nil {
 			logger.Error("resolving refs", "file", filePath, "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{
@@ -76,7 +82,7 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 
 	case c.JSON != "":
 		// Resolve cross-references first
-		resolved, err := resolveRefs([]byte(c.JSON), configDir, make(map[string]bool))
+		resolved, err := resolveRefsWithContext([]byte(c.JSON), configDir, visited, refCtx)
 		if err != nil {
 			logger.Error("resolving refs in inline json", "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{
@@ -130,6 +136,20 @@ func renderTemplate(s string) (string, error) {
 	}
 
 	return buf.String(), nil
+}
+
+// renderTemplateWithData processes both built-in tokens and request data placeholders.
+// Built-in tokens: {{uuid}}, {{now}}, {{timestamp}}
+// Request data: {.field}, {path.param}, {query.param}, {header.name}
+func renderTemplateWithData(s string, refCtx *RefContext) (string, error) {
+	// First resolve request data placeholders using the same logic as dynamic refs
+	resolved, err := resolvePlaceholders(s, refCtx)
+	if err != nil {
+		return s, err
+	}
+
+	// Then process built-in template tokens
+	return renderTemplate(resolved)
 }
 
 // writeJSON writes a JSON-encoded value with the given status code.
