@@ -1,0 +1,16 @@
+{
+  "name": "@ridakaddir/mockr-docs",
+  "version": "1.0.0",
+  "description": "Documentation site for mockr - A fast, zero-dependency CLI tool for mocking, stubbing, and proxying HTTP and gRPC APIs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev docs",
+    "build": "vitepress build docs",
+    "preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

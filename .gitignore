@@ -48,3 +48,8 @@ examples/openapi-generate/mocks-single/
 /mockr.yml
 /mockr.json
 /stubs/
+
+# VitePress docs build output and dependencies
+/website/node_modules/
+/website/docs/.vitepress/dist/
+/website/docs/.vitepress/cache/
