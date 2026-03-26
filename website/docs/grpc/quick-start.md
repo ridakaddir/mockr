@@ -10,10 +10,10 @@ The fastest way to start is to generate config and stubs from a `.proto` file:
 
 ```sh
 # Generate config and stubs
-mockr generate --proto service.proto --out ./mocks
+mockr generate --proto geo.proto --out ./mocks
 
 # Start HTTP (port 4000) + gRPC (port 50051)
-mockr --config ./mocks --grpc-proto service.proto
+mockr --config ./mocks --grpc-proto geo.proto
 ```
 
 ## With upstream proxy
@@ -22,7 +22,7 @@ Stub only the methods you care about — forward everything else to a real gRPC 
 
 ```sh
 mockr --config ./mocks \
-      --grpc-proto service.proto \
+      --grpc-proto geo.proto \
       --grpc-target localhost:9090
 ```
 
@@ -35,13 +35,13 @@ mockr includes built-in [server reflection](https://grpc.github.io/grpc/core/md_
 grpcurl -plaintext localhost:50051 list
 
 # Describe a service
-grpcurl -plaintext localhost:50051 describe users.UserService
+grpcurl -plaintext localhost:50051 describe geo.CountryService
 
 # Describe a message
-grpcurl -plaintext localhost:50051 describe users.GetUserRequest
+grpcurl -plaintext localhost:50051 describe geo.GetCountryRequest
 
 # Call a method
-grpcurl -plaintext -d '{"user_id":"1"}' localhost:50051 users.UserService/GetUser
+grpcurl -plaintext -d '{"country_code":"morocco"}' localhost:50051 geo.CountryService/GetCountry
 ```
 
 ---

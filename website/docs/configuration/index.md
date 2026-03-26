@@ -19,17 +19,17 @@ mockr --config mockr.toml
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/api/users"
+match    = "/api/countries"
 enabled  = true
 fallback = "success"
 
   [routes.cases.success]
   status = 200
-  file   = "stubs/users.json"
+  file   = "stubs/countries.json"
 
   [routes.cases.empty]
   status = 200
-  json   = '{"users": []}'
+  json   = '{"countries": []}'
 
   [routes.cases.error]
   status = 500
@@ -51,10 +51,9 @@ Split routes by domain for clarity:
 
 ```
 mocks/
-├── auth.toml       # /auth/*
-├── users.toml      # /users/*
-├── products.toml   # /products/*
-└── orders.toml     # /orders/*
+├── continents.toml    # /continents/*
+├── countries.toml     # /countries/*
+└── cities.toml        # /cities/*
 ```
 
 Mix formats freely — TOML, YAML, and JSON can coexist in the same directory.

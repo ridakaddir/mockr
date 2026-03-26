@@ -81,7 +81,7 @@ Either `--spec` or `--proto` is required. `--proto` takes precedence if both are
 
 ```sh
 mockr --init
-mockr --target https://api.example.com
+mockr --target https://restcountries.com/v3.1
 ```
 
 **Generate from OpenAPI and serve:**
@@ -94,26 +94,26 @@ mockr --config ./mocks
 **Selective mock with proxy fallthrough:**
 
 ```sh
-mockr --config ./mocks --target https://api.example.com
+mockr --config ./mocks --target https://restcountries.com/v3.1
 ```
 
 **Record real API responses:**
 
 ```sh
-mockr --config ./mocks --target https://api.example.com --record
+mockr --config ./mocks --target https://restcountries.com/v3.1 --record
 ```
 
 **Start HTTP + gRPC servers:**
 
 ```sh
-mockr --config ./mocks --grpc-proto service.proto
+mockr --config ./mocks --grpc-proto geo.proto
 ```
 
 **gRPC with upstream proxy:**
 
 ```sh
 mockr --config ./mocks \
-      --grpc-proto service.proto \
+      --grpc-proto geo.proto \
       --grpc-target localhost:9090
 ```
 
@@ -122,7 +122,7 @@ mockr --config ./mocks \
 ```sh
 task generate SPEC=openapi.yaml
 task generate SPEC=https://petstore3.swagger.io/api/v3/openapi.json
-task generate SPEC=openapi.yaml OUT=./petstore
+task generate SPEC=openapi.yaml OUT=./geo-mocks
 ```
 
 ---

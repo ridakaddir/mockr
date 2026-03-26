@@ -11,46 +11,46 @@ Conditions let you route requests to different response cases based on request d
 ```toml
 [[routes]]
 method   = "POST"
-match    = "/api/orders"
+match    = "/api/countries"
 enabled  = true
 fallback = "default"
 
   [[routes.conditions]]
   source = "body"
-  field  = "user.type"
+  field  = "continent"
   op     = "eq"
-  value  = "vip"
-  case   = "vip_response"
+  value  = "africa"
+  case   = "african_country"
 
   [[routes.conditions]]
   source = "query"
-  field  = "version"
+  field  = "format"
   op     = "eq"
-  value  = "v2"
-  case   = "v2_response"
+  value  = "brief"
+  case   = "brief_response"
 
   [[routes.conditions]]
   source = "header"
-  field  = "X-User-Role"
+  field  = "X-Language"
   op     = "eq"
-  value  = "admin"
-  case   = "admin_response"
+  value  = "fr"
+  case   = "french_response"
 
-  [routes.cases.vip_response]
+  [routes.cases.african_country]
   status = 200
-  json   = '{"discount": 0.3}'
+  json   = '{"region": "Africa", "currency_zone": "varied"}'
 
-  [routes.cases.v2_response]
+  [routes.cases.brief_response]
   status = 200
-  json   = '{"version": "v2"}'
+  json   = '{"format": "brief"}'
 
-  [routes.cases.admin_response]
+  [routes.cases.french_response]
   status = 200
-  json   = '{"scope": "admin"}'
+  json   = '{"langue": "francais"}'
 
   [routes.cases.default]
   status = 200
-  json   = '{"discount": 0.0}'
+  json   = '{"region": "unknown"}'
 ```
 
 ---
@@ -76,10 +76,10 @@ Match on JSON request body fields. Supports dot-notation for nested fields:
 ```toml
 [[routes.conditions]]
 source = "body"
-field  = "user.address.country"
+field  = "geography.coastline"
 op     = "eq"
-value  = "US"
-case   = "us_response"
+value  = "atlantic"
+case   = "atlantic_coast"
 ```
 
 ### `query`
@@ -89,10 +89,10 @@ Match on URL query parameters:
 ```toml
 [[routes.conditions]]
 source = "query"
-field  = "page"
+field  = "continent"
 op     = "eq"
-value  = "1"
-case   = "first_page"
+value  = "africa"
+case   = "african_countries"
 ```
 
 ### `header`
@@ -112,13 +112,13 @@ case   = "authenticated"
 Match on [named path parameters](named-parameters.md):
 
 ```toml
-# Route: match = "/api/users/{userId}/orders"
+# Route: match = "/api/countries/{countryId}/cities"
 [[routes.conditions]]
 source = "path"
-field  = "userId"
+field  = "countryId"
 op     = "eq"
-value  = "vip-user"
-case   = "vip_orders"
+value  = "morocco"
+case   = "moroccan_cities"
 ```
 
 > **Note:** `source = "query"` and `source = "header"` are not applicable to gRPC routes and are ignored.
@@ -129,10 +129,10 @@ case   = "vip_orders"
 
 | Operator | Description | Example |
 |---|---|---|
-| `eq` | Exact match | `value = "admin"` |
-| `neq` | Not equal | `value = "guest"` |
-| `contains` | String contains | `value = "@example.com"` |
-| `regex` | Regular expression match | `value = "^usr_[a-z]+$"` |
+| `eq` | Exact match | `value = "africa"` |
+| `neq` | Not equal | `value = "antarctica"` |
+| `contains` | String contains | `value = "north"` |
+| `regex` | Regular expression match | `value = "^[a-z]{2,3}$"` |
 | `exists` | Field is present | (no `value` needed) |
 | `not_exists` | Field is absent | (no `value` needed) |
 
@@ -152,32 +152,32 @@ case   = "vip_orders"
 ```toml
 [[routes]]
 method   = "POST"
-match    = "/api/payments"
+match    = "/api/cities"
 enabled  = true
 fallback = "default"
 
   # Check body field first
   [[routes.conditions]]
   source = "body"
-  field  = "amount"
+  field  = "population"
   op     = "regex"
-  value  = "^[0-9]{5,}$"
-  case   = "large_payment"
+  value  = "^[0-9]{7,}$"
+  case   = "megacity"
 
   # Then check query param
   [[routes.conditions]]
   source = "query"
-  field  = "currency"
+  field  = "country"
   op     = "eq"
-  value  = "EUR"
-  case   = "euro_payment"
+  value  = "morocco"
+  case   = "moroccan_city"
 
   # Then check header
   [[routes.conditions]]
   source = "header"
   field  = "X-Priority"
   op     = "exists"
-  case   = "priority_payment"
+  case   = "priority_request"
 ```
 
 ---

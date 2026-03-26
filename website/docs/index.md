@@ -42,7 +42,11 @@ features:
 
   - icon: 🔗
     title: Cross-Endpoint References
-    details: Reference data from other stub files with filtering and transformation using the {<!-- -->{ref:...}<!-- --> syntax.
+    details: Reference data from other stub files with filtering and transformation using the {<!-- -->{ref:...}<!-- -->} syntax.
+
+  - icon: 🔁
+    title: Array Processing
+    details: Iterate over collections and reshape each item with $each / $template syntax for building complex interconnected responses.
 
   - icon: ⏰
     title: Response Transitions
@@ -50,7 +54,7 @@ features:
 
   - icon: 🎨
     title: Template Tokens
-    details: Dynamic content generation with {<!-- -->{uuid}<!-- -->, {<!-- -->{now}<!-- -->, {<!-- -->{timestamp}<!-- --> and other template tokens.
+    details: Dynamic content generation with {<!-- -->{uuid}<!-- -->}, {<!-- -->{now}<!-- -->}, {<!-- -->{timestamp}<!-- -->} and other template tokens.
 
   - icon: 📝
     title: OpenAPI Generation

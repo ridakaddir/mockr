@@ -10,7 +10,7 @@ Record mode proxies all requests to a real API, saves each response as a stub fi
 
 ```sh
 mockr --config ./mocks \
-      --target https://api.example.com \
+      --target https://restcountries.com/v3.1 \
       --api-prefix /api \
       --record
 ```
@@ -21,7 +21,7 @@ Each new path is recorded once:
 
 ```
 Request 1  →  via=proxy   (real network, e.g. 73ms)
-              → stubs/get_users_1.json saved
+              → stubs/get_countries_morocco.json saved
               → route appended to mocks/recorded.toml
 Request 2  →  via=stub    (local file, <1ms)
 ```

@@ -10,10 +10,10 @@ Stub files and inline `json = "..."` values use [protojson](https://protobuf.dev
 
 ```json
 {
-  "userId": "usr_1a2b3c4d",
-  "name": "Alice Smith",
-  "email": "alice@example.com",
-  "active": true
+  "countryCode": "morocco",
+  "name": "Morocco",
+  "capital": "Rabat",
+  "continent": "africa"
 }
 ```
 
@@ -22,46 +22,46 @@ Stub files and inline `json = "..."` values use [protojson](https://protobuf.dev
 ```toml
 [grpc_routes.cases.ok]
 status = 0
-json   = '{"userId": "{{uuid}}", "createdAt": "{{now}}"}'
+json   = '{"countryId": "{{uuid}}", "createdAt": "{{now}}"}'
 ```
 
 ---
 
 ## Conditions
 
-Conditions evaluate fields from the decoded request message. Use `source = "body"` and dot-notation field paths. Both the proto field name (`payment_type`) and its camelCase equivalent (`paymentType`) are accepted automatically:
+Conditions evaluate fields from the decoded request message. Use `source = "body"` and dot-notation field paths. Both the proto field name (`country_code`) and its camelCase equivalent (`countryCode`) are accepted automatically:
 
 ```toml
 [[grpc_routes]]
-match    = "/orders.OrderService/CreateOrder"
+match    = "/geo.CountryService/GetCountryInfo"
 enabled  = true
 fallback = "ok"
 
   [[grpc_routes.conditions]]
   source = "body"
-  field  = "payment_type"     # snake_case or camelCase both work
+  field  = "country_code"     # snake_case or camelCase both work
   op     = "eq"
-  value  = "crypto"
-  case   = "pending_review"
+  value  = "morocco"
+  case   = "morocco_info"
 
   [[grpc_routes.conditions]]
   source = "body"
-  field  = "user.address.country"  # nested field, dot-notation
+  field  = "geography.continent"  # nested field, dot-notation
   op     = "eq"
-  value  = "EU"
-  case   = "eu_response"
+  value  = "africa"
+  case   = "african_country"
 
   [grpc_routes.cases.ok]
   status = 0
-  file   = "stubs/order_created.json"
+  file   = "stubs/country_default.json"
 
-  [grpc_routes.cases.pending_review]
+  [grpc_routes.cases.morocco_info]
   status = 0
-  json   = '{"status": "pending_review"}'
+  json   = '{"name": "Morocco", "capital": "Rabat", "languages": ["Arabic", "Berber", "French"]}'
 
-  [grpc_routes.cases.eu_response]
+  [grpc_routes.cases.african_country]
   status = 0
-  file   = "stubs/order_eu.json"
+  file   = "stubs/african_country.json"
 ```
 
 All condition operators work: `eq`, `neq`, `contains`, `regex`, `exists`, `not_exists`.
@@ -77,24 +77,24 @@ See [Conditions](../features/conditions.md) for the full operator reference.
 When a gRPC route has no matching condition and no `fallback`, mockr forwards the call to `--grpc-target`. This lets you stub only the methods you care about:
 
 ```toml
-# ListProducts is mocked for electronics only; all other categories are proxied
+# ListCities is mocked for Morocco only; all other countries are proxied
 [[grpc_routes]]
-match   = "/products.ProductService/ListProducts"
+match   = "/geo.CityService/ListCities"
 enabled = true
 # No fallback — unmatched conditions go to --grpc-target
 
   [[grpc_routes.conditions]]
   source = "body"
-  field  = "category"
+  field  = "country_code"
   op     = "eq"
-  value  = "electronics"
-  case   = "electronics"
+  value  = "morocco"
+  case   = "moroccan_cities"
 
-  [grpc_routes.cases.electronics]
+  [grpc_routes.cases.moroccan_cities]
   status = 0
-  file   = "stubs/products_electronics.json"
+  file   = "stubs/cities_morocco.json"
 
-# UpdateProduct is not defined at all — always proxied to --grpc-target
+# GetPopulation is not defined at all — always proxied to --grpc-target
 ```
 
 When no `--grpc-target` is set, unmatched methods return gRPC `UNIMPLEMENTED`.

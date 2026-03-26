@@ -10,17 +10,17 @@ gRPC routes live in the same config files as HTTP routes. All existing features 
 
 ```toml
 [[grpc_routes]]
-match    = "/users.UserService/GetUser"
+match    = "/geo.CountryService/GetCountry"
 enabled  = true
 fallback = "ok"
 
   [grpc_routes.cases.ok]
   status = 0   # gRPC OK
-  file   = "stubs/get_user.json"
+  file   = "stubs/get_country.json"
 
   [grpc_routes.cases.not_found]
   status = 5   # gRPC NOT_FOUND
-  json   = '{"message": "user not found"}'
+  json   = '{"message": "country not found"}'
 
   [grpc_routes.cases.error]
   status = 13  # gRPC INTERNAL
@@ -35,9 +35,9 @@ fallback = "ok"
 The `match` field is the full gRPC method path: `"/package.Service/Method"`. All three matching styles work:
 
 ```toml
-match = "/users.UserService/GetUser"   # exact
-match = "/users.UserService/*"         # wildcard — all methods in the service
-match = "~/users\\..*Service/.*"       # regex (prefix with ~)
+match = "/geo.CountryService/GetCountry"   # exact
+match = "/geo.CountryService/*"            # wildcard — all methods in the service
+match = "~/geo\\..*Service/.*"             # regex (prefix with ~)
 ```
 
 ---
@@ -69,32 +69,32 @@ Time-based transitions work identically to HTTP. The gRPC route key is the `matc
 
 ```toml
 [[grpc_routes]]
-match    = "/orders.OrderService/GetOrder"
+match    = "/geo.CountryService/GetVisaStatus"
 enabled  = true
-fallback = "processing"
+fallback = "submitted"
 
   [[grpc_routes.transitions]]
-  case     = "processing"
+  case     = "submitted"
   duration = 10
 
   [[grpc_routes.transitions]]
-  case     = "shipped"
+  case     = "under_review"
   duration = 50
 
   [[grpc_routes.transitions]]
-  case     = "delivered"
+  case     = "approved"
 
-  [grpc_routes.cases.processing]
+  [grpc_routes.cases.submitted]
   status = 0
-  json   = '{"status": "processing"}'
+  json   = '{"status": "submitted"}'
 
-  [grpc_routes.cases.shipped]
+  [grpc_routes.cases.under_review]
   status = 0
-  json   = '{"status": "shipped"}'
+  json   = '{"status": "under_review"}'
 
-  [grpc_routes.cases.delivered]
+  [grpc_routes.cases.approved]
   status = 0
-  json   = '{"status": "delivered"}'
+  json   = '{"status": "approved"}'
 ```
 
 See [Response Transitions](../features/response-transitions.md) for full details on timeline behaviour.

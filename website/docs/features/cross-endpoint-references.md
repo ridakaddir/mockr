@@ -4,15 +4,16 @@
 
 ---
 
-Cross-endpoint references allow you to include data from other stub files in your responses using the `` `{<!-- -->{ref:...}<!-- -->` `` syntax. This enables building interconnected mock APIs where endpoints reference and share data with optional filtering and transformation.
+Cross-endpoint references allow you to include data from other stub files in your responses using the `{{ref:...}}` syntax. This enables building interconnected mock APIs where endpoints reference and share data with optional filtering and transformation.
 
 ## Syntax
 
 ```
-{<!-- -->{ref:path}<!-- -->                           # Reference all items from a directory or single file
-{<!-- -->{ref:path?filter=field:value}<!-- -->        # Filter by field equality
-{<!-- -->{ref:path?template=template.json}<!-- -->    # Transform data shape using Go templates
-{<!-- -->{ref:path?filter=field:value&template=template.json}<!-- -->  # Both filter and transform
+{{ref:path}}                           # Reference all items from a directory or single file
+{{ref:path?filter=field:value}}        # Filter by field equality
+{{ref:path?template=template.json}}    # Transform data shape using Go templates
+{{ref:path?filter=field:value&template=template.json}}  # Both filter and transform
+"$spread": "{{ref:path}}"              # Spread object properties into containing object
 ```
 
 ---
@@ -25,9 +26,9 @@ Reference all JSON files in a directory:
 
 ```json
 {
-  "id": "endpoint-1",
-  "name": "My Endpoint",
-  "allModels": "{<!-- -->{ref:stubs/models/}<!-- -->"
+  "name": "Africa",
+  "area_km2": 30300000,
+  "countries": "{{ref:stubs/countries/}}"
 }
 ```
 
@@ -37,9 +38,9 @@ Reference a specific JSON file:
 
 ```json
 {
-  "id": "endpoint-1",
-  "name": "My Endpoint", 
-  "primaryModel": "{<!-- -->{ref:stubs/models/gpt-4.json}<!-- -->"
+  "name": "Casablanca",
+  "country": "Morocco",
+  "countryDetails": "{{ref:stubs/countries/morocco.json}}"
 }
 ```
 
@@ -53,8 +54,8 @@ Filter referenced data by field values using `?filter=field:value` syntax.
 
 ```json
 {
-  "activeModels": "{<!-- -->{ref:stubs/models/?filter=status:active}<!-- -->",
-  "productionEndpoints": "{<!-- -->{ref:stubs/endpoints/?filter=environment:production}<!-- -->"
+  "africanCountries": "{{ref:stubs/countries/?filter=continent:africa}}",
+  "largeCities": "{{ref:stubs/cities/?filter=coastal:true}}"
 }
 ```
 
@@ -64,8 +65,8 @@ Use dot notation to filter by nested object properties:
 
 ```json
 {
-  "adminUsers": "{<!-- -->{ref:stubs/users/?filter=user.role:admin}<!-- -->",
-  "cloudProviders": "{<!-- -->{ref:stubs/providers/?filter=config.type:cloud}<!-- -->"
+  "arabicSpeaking": "{{ref:stubs/countries/?filter=languages.primary:arabic}}",
+  "atlanticPorts": "{{ref:stubs/cities/?filter=geography.coast:atlantic}}"
 }
 ```
 
@@ -75,7 +76,7 @@ Chain multiple filters with `&` (all must match):
 
 ```json
 {
-  "filtered": "{<!-- -->{ref:stubs/items/?filter=status:active&filter=type:premium}<!-- -->"
+  "filtered": "{{ref:stubs/cities/?filter=country:morocco&filter=coastal:true}}"
 }
 ```
 
@@ -89,12 +90,12 @@ Transform the shape of referenced data using Go template files to rename fields,
 
 Create a template file using Go's `text/template` syntax:
 
-**`stubs/templates/model-summary.json`:**
+**`stubs/templates/city-summary.json`:**
 ```json
 {
-  "modelId": "{<!-- -->{.id}<!-- -->",
-  "displayName": "{<!-- -->{.modelName}<!-- -->",
-  "version": "{<!-- -->{.version}<!-- -->"
+  "cityName": "{{.name}}",
+  "pop": "{{.population}}",
+  "country": "{{.country}}"
 }
 ```
 
@@ -104,18 +105,18 @@ Reference the template to transform data:
 
 ```json
 {
-  "deployedModels": "{<!-- -->{ref:stubs/models/?template=stubs/templates/model-summary.json}<!-- -->"
+  "cities": "{{ref:stubs/cities/?template=stubs/templates/city-summary.json}}"
 }
 ```
 
 This transforms:
 ```json
-{"id": "gpt-4", "modelName": "GPT-4", "version": "1.0", "status": "active", "provider": "OpenAI"}
+{"name": "Casablanca", "country": "morocco", "population": 3360000, "coastal": true, "coordinates": {"lat": 33.57, "lon": -7.59}}
 ```
 
 Into:
 ```json
-{"modelId": "gpt-4", "displayName": "GPT-4", "version": "1.0"}
+{"cityName": "Casablanca", "pop": 3360000, "country": "morocco"}
 ```
 
 ---
@@ -126,14 +127,14 @@ Apply both filtering and transformation:
 
 ```json
 {
-  "activeDeployedModels": "{<!-- -->{ref:stubs/models/?filter=status:active&template=stubs/templates/model-summary.json}<!-- -->"
+  "moroccanCities": "{{ref:stubs/cities/?filter=country:morocco&template=stubs/templates/city-summary.json}}"
 }
 ```
 
 This workflow:
-1. Loads all models from `stubs/models/`
-2. Filters to only `status:active` models
-3. Transforms each model using the template
+1. Loads all cities from `stubs/cities/`
+2. Filters to only `country:morocco` cities
+3. Transforms each city using the template
 4. Returns the transformed array
 
 ---
@@ -149,9 +150,9 @@ Cross-endpoint references are restricted for security:
 
 Examples of blocked references:
 ```json
-{"data": "{<!-- -->{ref:../secret.json}<!-- -->"}           // ❌ Directory traversal
-{"data": "{<!-- -->{ref:/etc/passwd}<!-- -->"}              // ❌ Absolute path  
-{"data": "{<!-- -->{ref:data/?template=../tpl.json}<!-- -->"} // ❌ Template traversal
+{"data": "{{ref:../secret.json}}"}           // Directory traversal
+{"data": "{{ref:/etc/passwd}}"}              // Absolute path
+{"data": "{{ref:data/?template=../tpl.json}}"} // Template traversal
 ```
 
 ---
@@ -160,22 +161,25 @@ Examples of blocked references:
 
 ### Nested References
 
-Referenced files can contain their own `` `{<!-- -->{ref:...}<!-- -->` `` tokens (with circular reference detection):
+Referenced files can contain their own `{{ref:...}}` tokens (with circular reference detection):
 
-**`stubs/endpoints/prod.json`:**
+**`stubs/countries/morocco.json`:**
 ```json
 {
-  "id": "prod-endpoint",
-  "models": "{<!-- -->{ref:stubs/models/?filter=status:active}<!-- -->",
-  "config": "{<!-- -->{ref:stubs/configs/prod.json}<!-- -->"
+  "name": "Morocco",
+  "continent": "Africa",
+  "capital": "Rabat",
+  "cities": "{{ref:stubs/cities/?filter=country:morocco}}",
+  "continentInfo": "{{ref:stubs/continents/africa.json}}"
 }
 ```
 
-**`stubs/configs/prod.json`:**
+**`stubs/continents/africa.json`:**
 ```json
 {
-  "environment": "production",
-  "secrets": "{<!-- -->{ref:stubs/secrets/?filter=env:prod}<!-- -->"
+  "name": "Africa",
+  "area_km2": 30300000,
+  "totalCountries": 54
 }
 ```
 
@@ -185,7 +189,7 @@ When filters match no items, an empty array `[]` is returned (never `null`):
 
 ```json
 {
-  "noMatches": "{<!-- -->{ref:stubs/models/?filter=status:nonexistent}<!-- -->"
+  "noMatches": "{{ref:stubs/cities/?filter=country:nonexistent}}"
 }
 // Returns: {"noMatches": []}
 ```
@@ -193,57 +197,62 @@ When filters match no items, an empty array `[]` is returned (never `null`):
 ### Error Handling
 
 - **Missing files**: Clear error with file path
-- **Circular references**: Automatic detection and prevention  
+- **Circular references**: Automatic detection and prevention
 - **Invalid syntax**: Descriptive parsing errors
 - **Template errors**: Go template compilation/execution errors
 
 ---
 
-## Example: E-commerce API
+## Example: Geographic API
 
 **Directory Structure:**
 ```
 stubs/
-├── products/
-│   ├── 1.json          # {"id": "1", "name": "Laptop", "category": "electronics", "inStock": true}
-│   └── 2.json          # {"id": "2", "name": "Book", "category": "books", "inStock": false}
-├── users/
-│   └── alice.json      # {"id": "alice", "name": "Alice", "role": "admin"}
-├── orders/
-│   └── order-123.json
+├── continents/
+│   ├── africa.json       # {"name": "Africa", "area_km2": 30300000}
+│   └── europe.json       # {"name": "Europe", "area_km2": 10180000}
+├── countries/
+│   ├── morocco.json      # {"code": "morocco", "name": "Morocco", "continent": "africa", "capital": "Rabat"}
+│   ├── germany.json      # {"code": "germany", "name": "Germany", "continent": "europe", "capital": "Berlin"}
+│   ├── japan.json        # {"code": "japan", "name": "Japan", "continent": "asia", "capital": "Tokyo"}
+│   └── canada.json       # {"code": "canada", "name": "Canada", "continent": "north-america", "capital": "Ottawa"}
+├── cities/
+│   ├── casablanca.json   # {"name": "Casablanca", "country": "morocco", "population": 3360000}
+│   ├── berlin.json       # {"name": "Berlin", "country": "germany", "population": 3645000}
+│   ├── tokyo.json        # {"name": "Tokyo", "country": "japan", "population": 13960000}
+│   └── toronto.json      # {"name": "Toronto", "country": "canada", "population": 2930000}
 └── templates/
-    └── product-summary.json
+    └── city-summary.json
 ```
 
-**`stubs/orders/order-123.json`:**
+**`stubs/continents/africa.json`:**
 ```json
 {
-  "orderId": "order-123",
-  "customerId": "alice",
-  "customer": "{<!-- -->{ref:stubs/users/alice.json}<!-- -->",
-  "items": "{<!-- -->{ref:stubs/products/?filter=inStock:true&template=stubs/templates/product-summary.json}<!-- -->",
-  "allProducts": "{<!-- -->{ref:stubs/products/}<!-- -->"
+  "name": "Africa",
+  "area_km2": 30300000,
+  "countries": "{{ref:stubs/countries/?filter=continent:africa}}",
+  "moroccanCities": "{{ref:stubs/cities/?filter=country:morocco&template=stubs/templates/city-summary.json}}"
 }
 ```
 
-**`stubs/templates/product-summary.json`:**
+**`stubs/templates/city-summary.json`:**
 ```json
 {
-  "productId": "{<!-- -->{.id}<!-- -->",
-  "productName": "{<!-- -->{.name}<!-- -->"
+  "cityName": "{{.name}}",
+  "pop": "{{.population}}"
 }
 ```
 
 **Result:**
 ```json
 {
-  "orderId": "order-123",
-  "customerId": "alice", 
-  "customer": {"id": "alice", "name": "Alice", "role": "admin"},
-  "items": [{"productId": "1", "productName": "Laptop"}],
-  "allProducts": [
-    {"id": "1", "name": "Laptop", "category": "electronics", "inStock": true},
-    {"id": "2", "name": "Book", "category": "books", "inStock": false}
+  "name": "Africa",
+  "area_km2": 30300000,
+  "countries": [
+    {"code": "morocco", "name": "Morocco", "continent": "africa", "capital": "Rabat"}
+  ],
+  "moroccanCities": [
+    {"cityName": "Casablanca", "pop": 3360000}
   ]
 }
 ```
@@ -259,26 +268,26 @@ Cross-endpoint references work in both file-based stubs and inline JSON:
 ```toml
 [[routes]]
 method = "GET"
-match = "/endpoints"
+match = "/continents"
 
   [routes.cases.list]
-  file = "stubs/endpoints/"  # Files in this directory can contain {<!-- -->{ref:...}<!-- -->
+  file = "stubs/continents/"  # Files in this directory can contain {{ref:...}}
 ```
 
 ### Inline JSON
 
 ```toml
 [[routes]]
-method = "POST" 
-match = "/endpoints"
+method = "POST"
+match = "/countries"
 
   [routes.cases.created]
   status = 201
   json = '''
   {
-    "id": "{<!-- -->{uuid}<!-- -->",
-    "createdAt": "{<!-- -->{now}<!-- -->",
-    "availableModels": "{<!-- -->{ref:stubs/models/?filter=status:active}<!-- -->"
+    "code": "{{uuid}}",
+    "createdAt": "{{now}}",
+    "existingCountries": "{{ref:stubs/countries/}}"
   }
   '''
 ```
@@ -287,72 +296,73 @@ match = "/endpoints"
 
 ## Usage in Defaults Files
 
-Cross-endpoint references support **dynamic placeholders** in defaults files, allowing you to reference different stub files based on request data. This enables environment-specific, tenant-specific, or user-specific data loading in both regular operations and background transitions.
+Cross-endpoint references support **dynamic placeholders** in defaults files, allowing you to reference different stub files based on request data. This enables region-specific, continent-specific, or language-specific data loading in both regular operations and background transitions.
 
 ### Dynamic Placeholder Syntax
 
-Use these placeholders inside `` `{<!-- -->{ref:...}<!-- -->` `` tokens:
+Use these placeholders inside `{{ref:...}}` tokens:
 
 | Placeholder | Description | Example |
 |-------------|-------------|---------|
-| `` `{.field}` `` | Request body field | `` `{<!-- -->{ref:stubs/{.endpointId}/models/}<!-- -->` `` |
-| `` `{.nested.field}` `` | Nested body field | `` `{<!-- -->{ref:stubs/{.config.env}/models/}<!-- -->` `` |
-| `` `{path.param}` `` | URL path parameter | `` `{<!-- -->{ref:stubs/{path.tenantId}/users/}<!-- -->` `` |
-| `` `{query.param}` `` | Query parameter | `` `{<!-- -->{ref:stubs/{query.version}/models/}<!-- -->` `` |
-| `` `{header.Name}` `` | Request header | `` `{<!-- -->{ref:stubs/{header.X-Tenant-Id}/models/}<!-- -->` `` |
+| `{.field}` | Request body field | `{{ref:stubs/{.continent}/countries/}}` |
+| `{.nested.field}` | Nested body field | `{{ref:stubs/{.geo.region}/countries/}}` |
+| `{path.param}` | URL path parameter | `{{ref:stubs/{path.continentId}/countries/}}` |
+| `{query.param}` | Query parameter | `{{ref:stubs/{query.region}/countries/}}` |
+| `{header.Name}` | Request header | `{{ref:stubs/{header.X-Region}/countries/}}` |
 
-### Example: Environment-Specific Defaults
+### Example: Continent-Specific Defaults
 
 **Config:**
 ```toml
 [[routes]]
 method = "POST"
-match = "/api/endpoints"
+match = "/api/countries"
 
   [routes.cases.created]
   status = 201
   persist = true
   merge = "append"
-  key = "endpointId"
-  defaults = "defaults/endpoint.json"
+  key = "code"
+  defaults = "defaults/country.json"
 ```
 
-**`defaults/endpoint.json`:**
+**`defaults/country.json`:**
 ```json
 {
-  "status": "Deploying",
-  "environment": "{.environment}",
-  "models": "{<!-- -->{ref:models/{.environment}/}<!-- -->",
-  "config": "{<!-- -->{ref:configs/{path.tenantId}/{.environment}.json}<!-- -->"
+  "status": "active",
+  "continent": "{.continent}",
+  "neighboringCountries": "{{ref:countries/{.continent}/}}",
+  "continentInfo": "{{ref:continents/{.continent}.json}}"
 }
 ```
 
 **Request:**
 ```bash
-POST /api/endpoints
+POST /api/countries
 {
-  "endpointId": "ep-123",
-  "environment": "staging"
+  "code": "tunisia",
+  "name": "Tunisia",
+  "continent": "africa"
 }
 ```
 
 This resolves to defaults that load:
-- `models/staging/` directory (environment-specific models)
-- `configs/tenant-a/staging.json` file (tenant + environment config)
+- `countries/africa/` directory (countries on the same continent)
+- `continents/africa.json` file (continent details)
 
 ### Live Directory References
 
-When a defaults file contains a `{<!-- -->}{ref:...}}` token that points to a **directory** (path ending with `/`), the reference is preserved as a live token in the created file rather than being resolved at creation time. This means directory references resolve dynamically on every read, so they always reflect the current state of the referenced directory.
+When a defaults file contains a `{{ref:...}}` token that points to a **directory** (path ending with `/`), the reference is preserved as a live token in the created file rather than being resolved at creation time. This means directory references resolve dynamically on every read, so they always reflect the current state of the referenced directory.
 
-For example, if `defaults/endpoint.json` contains:
+For example, if `defaults/continent.json` contains:
 ```json
 {
-  "endpointId": "{{uuid}}",
-  "deployedModels": "{{ref:stubs/deployments/{.endpointId}/?template=stubs/templates/deployed-model.json}}"
+  "continentId": "{{uuid}}",
+  "countries": "{{ref:stubs/countries/{.continentId}/?template=stubs/templates/country-summary.json}}"
 }
 ```
 
-When an endpoint is created, the `deployedModels` field is stored as `"{<!-- -->}{ref:stubs/deployments/ep-123/?template=...}}"` (with `{.endpointId}` resolved to the concrete value). Each subsequent GET request resolves this reference against the current contents of the deployment directory — so newly created deployments appear immediately.
+When a continent is created, the `countries` field is stored as `"{{ref:stubs/countries/africa/?template=...}}"` (with `{.continentId}` resolved to the concrete value). Each subsequent GET request resolves this reference against the current contents of the country directory — so newly added countries appear immediately.
 
 File-based refs (not ending with `/`) are still resolved at creation time, since they point to static data.
 
@@ -363,114 +373,109 @@ Dynamic refs work in **background transitions** by storing the original request 
 **Config with transitions:**
 ```toml
 [[routes]]
-method = "POST"
-match = "/api/deployments"
+method   = "POST"
+match    = "/api/cities"
 fallback = "created"
 
-  [routes.transitions]
-  # Initial state (from request)
   [[routes.transitions]]
-  case = "deploying"
+  case     = "pending"
   duration = 30
-  
-  # After 30s, transition to ready
-  [[routes.transitions]]  
-  case = "ready"
+
+  [[routes.transitions]]
+  case     = "verified"
 
   [routes.cases.created]
-  status = 201
-  persist = true
-  merge = "append"  
-  defaults = "defaults/deployment.json"
+  status   = 201
+  persist  = true
+  merge    = "append"
+  defaults = "defaults/city.json"
 
-  [routes.cases.ready]
-  persist = true
-  merge = "update"
-  defaults = "defaults/deployment-ready.json"  # Uses dynamic refs!
+  [routes.cases.verified]
+  persist  = true
+  merge    = "update"
+  defaults = "defaults/city-verified.json"
 ```
 
-**`defaults/deployment-ready.json`:**
+**`defaults/city-verified.json`:**
 ```json
 {
-  "status": "Ready",
-  "endpoint": "{<!-- -->{ref:endpoints/{.endpointId}/status.json}<!-- -->",
-  "models": "{<!-- -->{ref:models/{.environment}/ready/}<!-- -->"
+  "status": "verified",
+  "countryInfo": "{{ref:countries/{.country}.json}}",
+  "nearbyCity": "{{ref:cities/{.country}/}}"
 }
 ```
 
-When the background transition fires after 30 seconds, the dynamic placeholders `` `{.endpointId}` `` and `` `{.environment}` `` are resolved using the **original request data** that was stored when the transition was scheduled.
+When the background transition fires after 30 seconds, the dynamic placeholders `{.country}` are resolved using the **original request data** that was stored when the transition was scheduled.
 
 ### Error Handling
 
 Dynamic refs use **strict error handling** for data integrity:
 
 - **Missing field**: Error if placeholder field not found in request
-- **Empty value**: Error if placeholder resolves to empty string  
+- **Empty value**: Error if placeholder resolves to empty string
 - **Missing file**: Error for non-existent file references
 - **Missing directory**: Returns empty array `[]` (standard behavior)
 
 ```json
-// ❌ These cause errors:
-{"data": "{<!-- -->{ref:stubs/{.missingField}/}<!-- -->"}      // Field not in request
-{"data": "{<!-- -->{ref:stubs/{.emptyField}/}<!-- -->"}        // Field exists but empty
-{"data": "{<!-- -->{ref:stubs/{.field}/missing.json}<!-- -->"} // File doesn't exist
+// These cause errors:
+{"data": "{{ref:stubs/{.missingField}/}}"}      // Field not in request
+{"data": "{{ref:stubs/{.emptyField}/}}"}        // Field exists but empty
+{"data": "{{ref:stubs/{.field}/missing.json}}"} // File doesn't exist
 
-// ✅ This succeeds (returns empty array):
-{"data": "{<!-- -->{ref:stubs/{.field}/missing-dir/}<!-- -->"} // Directory doesn't exist
+// This succeeds (returns empty array):
+{"data": "{{ref:stubs/{.field}/missing-dir/}}"} // Directory doesn't exist
 ```
 
-### Advanced Example: Multi-Tenant API
+### Advanced Example: Region-Based API
 
 **Directory Structure:**
 ```
 stubs/
-├── tenants/
-│   ├── acme/
-│   │   ├── prod/
-│   │   │   └── models/
-│   │   │       └── gpt-4.json
-│   │   └── staging/
-│   └── corp/
+├── regions/
+│   ├── north-africa/
+│   │   └── countries/
+│   │       └── morocco.json
+│   └── western-europe/
+│       └── countries/
+│           └── germany.json
 └── defaults/
-    ├── tenant-deployment.json
-    └── tenant-endpoint.json
+    ├── region-country.json
+    └── region-city.json
 ```
 
-**`defaults/tenant-deployment.json`:**
+**`defaults/region-country.json`:**
 ```json
 {
-  "tenantId": "{header.X-Tenant-Id}",
-  "environment": "{.environment}",
-  "models": "{<!-- -->{ref:tenants/{header.X-Tenant-Id}/{.environment}/models/}<!-- -->",
-  "config": "{<!-- -->{ref:tenants/{header.X-Tenant-Id}/config.json}<!-- -->",
+  "region": "{header.X-Region}",
+  "continent": "{.continent}",
+  "countries": "{{ref:regions/{header.X-Region}/{.continent}/countries/}}",
   "metadata": {
-    "createdAt": "{<!-- -->{now}<!-- -->",
-    "deploymentId": "{<!-- -->{uuid}<!-- -->"
+    "createdAt": "{{now}}",
+    "countryId": "{{uuid}}"
   }
 }
 ```
 
 **Request:**
 ```bash
-POST /api/deployments
-X-Tenant-Id: acme
+POST /api/countries
+X-Region: north-africa
 
 {
-  "endpointId": "ep-456", 
-  "environment": "prod"
+  "name": "Tunisia",
+  "continent": "africa"
 }
 ```
 
 **Resolved defaults:**
 ```json
 {
-  "tenantId": "acme",
-  "environment": "prod", 
-  "models": [{"id": "gpt-4", "name": "GPT-4", "status": "ready"}],
-  "config": {"tier": "premium", "limits": {"requests": 10000}<!-- -->,
+  "region": "north-africa",
+  "continent": "africa",
+  "countries": [{"code": "morocco", "name": "Morocco", "capital": "Rabat"}],
   "metadata": {
-    "createdAt": "2024-03-25T15:30:00Z",
-    "deploymentId": "550e8400-e29b-41d4-a716-446655440000"
+    "createdAt": "2026-03-26T10:30:00Z",
+    "countryId": "550e8400-e29b-41d4-a716-446655440000"
   }
 }
 ```
@@ -479,9 +484,9 @@ X-Tenant-Id: acme
 
 ## Best Practices
 
-1. **Organize by domain**: Group related stubs in directories (`users/`, `products/`, etc.)
+1. **Organize by domain**: Group related stubs in directories (`continents/`, `countries/`, `cities/`)
 
-2. **Use descriptive template names**: `deployed-model.json`, `user-summary.json`
+2. **Use descriptive template names**: `city-summary.json`, `country-brief.json`
 
 3. **Filter for relevance**: Only include data that makes sense for the context
 
@@ -493,4 +498,152 @@ X-Tenant-Id: acme
 
 ---
 
-**See also:** [Template Tokens](template-tokens.md) | [Directory-Based Stubs](directory-stubs.md) | [Dynamic Files](dynamic-files.md)
+## Object Spreading
+
+Object spreading allows you to merge the properties of a referenced object directly into the containing object using the `$spread` field with a `{{ref:...}}` reference. This is particularly useful for combining data from multiple sources into a flat response structure.
+
+### Syntax
+
+```
+"$spread": "{{ref:path}}"                    # Spread all properties from referenced object
+"$spread": "{{ref:path?filter=field:value}}" # Spread filtered properties
+"$spread": "{{ref:path?template=template.json}}" # Spread transformed properties
+```
+
+### Basic Spreading
+
+Spread all properties from a referenced file:
+
+```json
+{
+  "id": "morocco-detail",
+  "$spread": "{{ref:stubs/countries/morocco.json}}",
+  "cities": "{{ref:stubs/cities/?filter=country:morocco&template=stubs/templates/city-summary.json}}"
+}
+```
+
+**Referenced file** (`stubs/countries/morocco.json`):
+```json
+{
+  "code": "morocco",
+  "name": "Morocco",
+  "continent": "africa",
+  "capital": "Rabat",
+  "population": 37000000
+}
+```
+
+**Result** (flat structure):
+```json
+{
+  "id": "morocco-detail",
+  "code": "morocco",
+  "name": "Morocco",
+  "continent": "africa",
+  "capital": "Rabat",
+  "population": 37000000,
+  "cities": [{"cityName": "Casablanca", "pop": 3360000}]
+}
+```
+
+### Property Override
+
+Explicit properties override spread properties when there are conflicts:
+
+```json
+{
+  "$spread": "{{ref:stubs/countries/morocco.json}}",
+  "capital": "Casablanca"  // This overrides "Rabat" from the spread object
+}
+```
+
+### Spreading with Dynamic Placeholders
+
+Combine spreading with path parameters and other dynamic placeholders:
+
+```json
+{
+  "$spread": "{{ref:stubs/countries/{path.countryId}.json}}",
+  "continent": "{path.continent}",
+  "cities": "{{ref:stubs/cities/?filter=country:{path.countryId}}}"
+}
+```
+
+### Use Cases
+
+**1. Country Detail Enhancement**: Add related data to existing country data
+```json
+{
+  "$spread": "{{ref:stubs/countries/{path.countryId}.json}}",
+  "cities": "{{ref:stubs/cities/?filter=country:{path.countryId}}}",
+  "lastUpdated": "{{now}}"
+}
+```
+
+**2. Configuration Merging**: Combine base configuration with region-specific overrides
+```json
+{
+  "$spread": "{{ref:stubs/defaults/country-base.json}}",
+  "continent": "{path.continent}",
+  "timezone": "UTC+1"
+}
+```
+
+**3. Response Composition**: Build complex responses from multiple data sources
+```json
+{
+  "$spread": "{{ref:stubs/countries/{path.countryId}.json}}",
+  "cities": "{{ref:stubs/cities/?filter=country:{path.countryId}}}",
+  "continentInfo": "{{ref:stubs/continents/{.continent}.json}}"
+}
+```
+
+**4. Nested Object Spreading**: Spread properties into nested structures
+```json
+{
+  "code": "morocco",
+  "geography": {
+    "$spread": "{{ref:stubs/geography/morocco.json}}",
+    "isCoastal": true
+  },
+  "status": "active"
+}
+```
+
+### Limitations
+
+1. **Objects only**: Can only spread objects (`map[string]interface{}`), not arrays or primitives
+2. **Per-object scope**: Each `$spread` only merges into its immediate containing object, but you can use `$spread` inside nested objects for nested spreading
+3. **Key conflicts**: Later properties override earlier ones (explicit > spread)
+4. **Processing order**: Spread resolution happens before regular reference resolution
+
+### Error Handling
+
+**Invalid Syntax:**
+```json
+{
+  "$spread": "invalid-value"  // ERROR: Must be {{ref:...}} token
+}
+```
+
+**Non-Object Reference:**
+```json
+{
+  "$spread": "{{ref:stubs/cities/}}"  // ERROR: Cannot spread array
+}
+```
+
+The above will result in an error: `$spread ref must resolve to an object, got []interface {}`
+
+**Invalid Type:**
+```json
+{
+  "$spread": 123  // ERROR: Must be string
+}
+```
+
+Result: `$spread field must be a string, got int`
+
+---
+
+**See also:** [Array Processing](array-processing.md) | [Template Tokens](template-tokens.md) | [Directory-Based Stubs](directory-stubs.md) | [Dynamic Files](dynamic-files.md)

@@ -4,7 +4,7 @@
 
 ---
 
-Automatically advance resources through a sequence of states over time. Useful for simulating order fulfillment, deployment pipelines, provisioning workflows, or any state machine.
+Automatically advance resources through a sequence of states over time. Useful for simulating visa processing, city verification workflows, country admission pipelines, or any state machine.
 
 mockr supports two transition modes:
 
@@ -24,33 +24,33 @@ Transitions on a **GET route** serve different cases based on elapsed time since
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/orders/*"
+match    = "/countries/{countryId}/visa-status"
 enabled  = true
-fallback = "shipped"
+fallback = "submitted"
 
   [[routes.transitions]]
-  case     = "shipped"
+  case     = "submitted"
   duration = 30          # serve for 30 seconds
 
   [[routes.transitions]]
-  case     = "out_for_delivery"
+  case     = "under_review"
   duration = 60          # serve for 60 seconds
 
   [[routes.transitions]]
-  case     = "delivered"
+  case     = "approved"
   # no duration — terminal state
 
-  [routes.cases.shipped]
+  [routes.cases.submitted]
   status = 200
-  json   = '{"number": "o123", "status": "shipped"}'
+  json   = '{"country": "morocco", "status": "submitted"}'
 
-  [routes.cases.out_for_delivery]
+  [routes.cases.under_review]
   status = 200
-  json   = '{"number": "o123", "status": "out_for_delivery"}'
+  json   = '{"country": "morocco", "status": "under_review"}'
 
-  [routes.cases.delivered]
+  [routes.cases.approved]
   status = 200
-  json   = '{"number": "o123", "status": "delivered"}'
+  json   = '{"country": "morocco", "status": "approved"}'
 ```
 
 ### Timeline
@@ -58,15 +58,15 @@ fallback = "shipped"
 The timer starts on the **first request** to the route:
 
 ```
-t = 0s   first request  → shipped          (duration: 30s)
-t = 30s  next request   → out_for_delivery  (duration: 60s)
-t = 90s  next request   → delivered         (terminal — stays here)
+t = 0s   first request  → submitted       (duration: 30s)
+t = 30s  next request   → under_review    (duration: 60s)
+t = 90s  next request   → approved        (terminal — stays here)
 ```
 
 ### Behaviour
 
 - **Conditions take priority** — if the route also has [conditions](conditions.md), they are evaluated first. Transitions only activate when no condition matches
-- **Shared timeline per route pattern** — all requests to `GET /orders/*` share one clock regardless of the specific ID (`/orders/123` and `/orders/456` advance together)
+- **Shared timeline per route pattern** — all requests to `GET /countries/*/visa-status` share one clock regardless of the specific country (`/countries/morocco/visa-status` and `/countries/canada/visa-status` advance together)
 - **Hot reload resets** — editing the config file restarts the sequence from the beginning
 - **No looping** — transitions are one-way; the last entry without `duration` is the terminal state
 
@@ -75,25 +75,25 @@ t = 90s  next request   → delivered         (terminal — stays here)
 ```yaml
 routes:
   - method: GET
-    match: /orders/*
+    match: /countries/{countryId}/visa-status
     enabled: true
-    fallback: shipped
+    fallback: submitted
     transitions:
-      - case: shipped
+      - case: submitted
         duration: 30
-      - case: out_for_delivery
+      - case: under_review
         duration: 60
-      - case: delivered
+      - case: approved
     cases:
-      shipped:
+      submitted:
         status: 200
-        json: '{"number": "o123", "status": "shipped"}'
-      out_for_delivery:
+        json: '{"country": "morocco", "status": "submitted"}'
+      under_review:
         status: 200
-        json: '{"number": "o123", "status": "out_for_delivery"}'
-      delivered:
+        json: '{"country": "morocco", "status": "under_review"}'
+      approved:
         status: 200
-        json: '{"number": "o123", "status": "delivered"}'
+        json: '{"country": "morocco", "status": "approved"}'
 ```
 
 ---
@@ -102,66 +102,66 @@ routes:
 
 Transitions on a **POST route** schedule background file mutations after a resource is created. The file on disk is updated in the background, so all subsequent reads (GET by ID, GET list) reflect the new state automatically.
 
-This is ideal for simulating deployment pipelines, provisioning workflows, or any resource that transitions through states after creation.
+This is ideal for simulating city verification workflows, country registration pipelines, or any resource that transitions through states after creation.
 
-### Example: deployment lifecycle
+### Example: city verification lifecycle
 
 ```toml
-# POST — creates deployment, starts background transition
+# POST — creates city, starts background transition
 [[routes]]
 method   = "POST"
-match    = "/deployments/{endpointId}"
+match    = "/continents/{continentId}/cities"
 fallback = "created"
 
   [[routes.transitions]]
-  case     = "deploying"
+  case     = "pending"
   duration = 15
 
   [[routes.transitions]]
-  case     = "ready"
+  case     = "verified"
 
   [routes.cases.created]
   status   = 201
-  file     = "deployments/{path.endpointId}/"
+  file     = "cities/{path.continentId}/"
   persist  = true
   merge    = "append"
-  key      = "deploymentId"
-  defaults = "defaults/deployment.json"
+  key      = "cityId"
+  defaults = "defaults/city.json"
 
-  [routes.cases.ready]
+  [routes.cases.verified]
   persist  = true
   merge    = "update"
-  defaults = "defaults/deployment-ready.json"
+  defaults = "defaults/city-verified.json"
 
 # GET by ID — pure read, no transitions needed
 [[routes]]
 method   = "GET"
-match    = "/deployments/{endpointId}/{deploymentId}"
+match    = "/continents/{continentId}/cities/{cityId}"
 fallback = "success"
 
   [routes.cases.success]
   status = 200
-  file   = "deployments/{path.endpointId}/{path.deploymentId}.json"
+  file   = "cities/{path.continentId}/{path.cityId}.json"
 
 # GET list — directory aggregation, also sees the updated files
 [[routes]]
 method   = "GET"
-match    = "/deployments/{endpointId}"
+match    = "/continents/{continentId}/cities"
 fallback = "success"
 
   [routes.cases.success]
   status = 200
-  file   = "deployments/{path.endpointId}/"
+  file   = "cities/{path.continentId}/"
 ```
 
-With `defaults/deployment.json`:
+With `defaults/city.json`:
 ```json
-{"status": "Deploying", "region": "us-east-1", "createdAt": "{<!-- -->{now}<!-- -->"}
+{"status": "pending", "continent": "{path.continentId}", "createdAt": "{{now}}"}
 ```
 
-And `defaults/deployment-ready.json`:
+And `defaults/city-verified.json`:
 ```json
-{"status": "Ready"}
+{"status": "verified"}
 ```
 
 ### Timeline
@@ -169,21 +169,21 @@ And `defaults/deployment-ready.json`:
 The timer starts on **resource creation** (the POST request):
 
 ```
-t = 0s   POST creates file  → {"status": "Deploying"}
-t = 15s  background mutation → merges {"status": "Ready"} into the file
+t = 0s   POST creates file  → {"status": "pending"}
+t = 15s  background mutation → merges {"status": "verified"} into the file
 ```
 
 ### Flow
 
-1. **POST** creates the resource → responds 201 with `"status": "Deploying"`
+1. **POST** creates the resource → responds 201 with `"status": "pending"`
 2. **Background goroutine** sleeps for 15 seconds
-3. **After 15s**, mockr merges `` `{"status": "Ready"}` `` into the file on disk
-4. **Any GET** (by ID or list) now returns `"status": "Ready"`
+3. **After 15s**, mockr merges `{"status": "verified"}` into the file on disk
+4. **Any GET** (by ID or list) now returns `"status": "verified"`
 
 ### How it works
 
 - The `fallback` case (`created`) handles the actual POST response
-- Transition case names (`deploying`, `ready`) are for the scheduler, not for request-time case selection — they don't need to match the `fallback`
+- Transition case names (`pending`, `verified`) are for the scheduler, not for request-time case selection — they don't need to match the `fallback`
 - Transition cases with `persist = true` and `defaults` are scheduled as background file mutations
 - Each POST creates **independent timers** — different resources transition independently
 - **Hot reload** cancels all pending background mutations
@@ -196,25 +196,25 @@ Background transitions support multiple stages with cumulative durations:
 
 ```toml
 [[routes.transitions]]
-case     = "provisioning"
+case     = "pending"
 duration = 10               # first 10 seconds
 
 [[routes.transitions]]
-case     = "configuring"
+case     = "reviewing"
 duration = 20               # next 20 seconds (fires at t=10s)
 
 [[routes.transitions]]
-case     = "ready"          # fires at t=30s
+case     = "verified"       # fires at t=30s
 
-[routes.cases.configuring]
+[routes.cases.reviewing]
 persist  = true
 merge    = "update"
-defaults = "defaults/configuring.json"
+defaults = "defaults/city-reviewing.json"
 
-[routes.cases.ready]
+[routes.cases.verified]
 persist  = true
 merge    = "update"
-defaults = "defaults/ready.json"
+defaults = "defaults/city-verified.json"
 ```
 
 ---
@@ -232,8 +232,8 @@ defaults = "defaults/ready.json"
 
 See [`examples/transitions/`](../../examples/transitions/) for complete working examples:
 
-- **`orders.toml`** — request-time transitions (GET returns different responses over time)
-- **`deployments.toml`** — background transitions (POST creates resource, file mutates on disk after delay)
+- **`visa-status.toml`** — request-time transitions (GET returns different responses over time)
+- **`city-verification.toml`** — background transitions (POST creates resource, file mutates on disk after delay)
 
 ---
 

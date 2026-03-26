@@ -11,34 +11,34 @@ mockr auto-detects the config format from the file extension. All three formats 
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/api/users"
+match    = "/api/countries"
 enabled  = true
 fallback = "success"
 
   [[routes.conditions]]
   source = "query"
-  field  = "role"
+  field  = "continent"
   op     = "eq"
-  value  = "admin"
-  case   = "admin_users"
+  value  = "africa"
+  case   = "african_countries"
 
   [routes.cases.success]
   status = 200
-  file   = "stubs/users.json"
+  file   = "stubs/countries.json"
 
-  [routes.cases.admin_users]
+  [routes.cases.african_countries]
   status = 200
-  file   = "stubs/admin-users.json"
+  file   = "stubs/african-countries.json"
 
 [[routes]]
 method   = "POST"
-match    = "/api/users"
+match    = "/api/countries"
 enabled  = true
 fallback = "created"
 
   [routes.cases.created]
   status = 201
-  json   = '{"id": "{<!-- -->{uuid}<!-- -->", "role": "user"}'
+  json   = '{"code": "{{uuid}}", "status": "active"}'
 ```
 
 ---
@@ -48,31 +48,31 @@ fallback = "created"
 ```yaml
 routes:
   - method: GET
-    match: /api/users
+    match: /api/countries
     enabled: true
     fallback: success
     conditions:
       - source: query
-        field: role
+        field: continent
         op: eq
-        value: admin
-        case: admin_users
+        value: africa
+        case: african_countries
     cases:
       success:
         status: 200
-        file: stubs/users.json
-      admin_users:
+        file: stubs/countries.json
+      african_countries:
         status: 200
-        file: stubs/admin-users.json
+        file: stubs/african-countries.json
 
   - method: POST
-    match: /api/users
+    match: /api/countries
     enabled: true
     fallback: created
     cases:
       created:
         status: 201
-        json: '{"id": "{<!-- -->{uuid}<!-- -->", "role": "user"}'
+        json: '{"code": "{{uuid}}", "status": "active"}'
 ```
 
 ---
@@ -84,32 +84,32 @@ routes:
   "routes": [
     {
       "method": "GET",
-      "match": "/api/users",
+      "match": "/api/countries",
       "enabled": true,
       "fallback": "success",
       "conditions": [
         {
           "source": "query",
-          "field": "role",
+          "field": "continent",
           "op": "eq",
-          "value": "admin",
-          "case": "admin_users"
+          "value": "africa",
+          "case": "african_countries"
         }
       ],
       "cases": {
-        "success": { "status": 200, "file": "stubs/users.json" },
-        "admin_users": { "status": 200, "file": "stubs/admin-users.json" }
+        "success": { "status": 200, "file": "stubs/countries.json" },
+        "african_countries": { "status": 200, "file": "stubs/african-countries.json" }
       }
     },
     {
       "method": "POST",
-      "match": "/api/users",
+      "match": "/api/countries",
       "enabled": true,
       "fallback": "created",
       "cases": {
         "created": {
           "status": 201,
-          "json": "{\"id\": \"{<!-- -->{uuid}<!-- -->\", \"role\": \"user\"}"
+          "json": "{\"code\": \"{{uuid}}\", \"status\": \"active\"}"
         }
       }
     }
@@ -121,17 +121,17 @@ routes:
 
 ## Mixing formats
 
-When using [directory config](index#directory-config), you can mix formats freely:
+When using [directory config](index.md#directory-config), you can mix formats freely:
 
 ```
 mocks/
-├── auth.toml
-├── users.yaml
-└── products.json
+├── continents.toml
+├── countries.yaml
+└── cities.json
 ```
 
 All files are loaded and their routes merged in alphabetical order.
 
 ---
 
-**See also:** [Configuration Overview](index) | [Routes](routes.md) | [Cases](cases.md)
+**See also:** [Configuration Overview](index.md) | [Routes](routes.md) | [Cases](cases.md)

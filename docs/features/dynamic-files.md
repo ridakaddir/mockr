@@ -9,12 +9,12 @@ Use `{source.field}` placeholders in `file` paths to resolve stub filenames from
 ## Syntax
 
 ```toml
-[routes.cases.user_orders]
+[routes.cases.country_cities]
 status = 200
-file   = "stubs/user-{query.username}-orders.json"
+file   = "stubs/cities-{query.country}.json"
 ```
 
-A request to `GET /api/orders?username=john` resolves to `stubs/user-john-orders.json`.
+A request to `GET /api/cities?country=morocco` resolves to `stubs/cities-morocco.json`.
 
 ---
 
@@ -22,29 +22,29 @@ A request to `GET /api/orders?username=john` resolves to `stubs/user-john-orders
 
 | Placeholder | Resolves from | Example |
 |---|---|---|
-| `{query.fieldName}` | URL query parameter | `?username=john` |
-| `{body.fieldName}` | JSON request body field | `{"user": {"id": "42"}}` |
-| `{header.HeaderName}` | Request header | `X-User-Id: abc` |
-| `{path.paramName}` | Named path parameter | `/users/{userId}` |
+| `{query.fieldName}` | URL query parameter | `?country=morocco` |
+| `{body.fieldName}` | JSON request body field | `{"geography": {"region": "north-africa"}}` |
+| `{header.HeaderName}` | Request header | `X-Country: morocco` |
+| `{path.paramName}` | Named path parameter | `/countries/{countryId}` |
 
 ### Examples
 
 ```toml
 # From query parameter
-file = "stubs/user-{query.username}-orders.json"
-# ?username=alice → stubs/user-alice-orders.json
+file = "stubs/cities-{query.country}.json"
+# ?country=morocco → stubs/cities-morocco.json
 
 # From body field (dot-notation for nested)
-file = "stubs/org-{body.user.orgId}.json"
-# {"user": {"orgId": "acme"}} → stubs/org-acme.json
+file = "stubs/region-{body.geography.region}.json"
+# {"geography": {"region": "north-africa"}} → stubs/region-north-africa.json
 
 # From header
-file = "stubs/tenant-{header.X-Tenant-Id}.json"
-# X-Tenant-Id: t1 → stubs/tenant-t1.json
+file = "stubs/continent-{header.X-Continent}.json"
+# X-Continent: africa → stubs/continent-africa.json
 
 # From named path parameter
-file = "stubs/user-{path.userId}-profile.json"
-# /api/users/john123/profile → stubs/user-john123-profile.json
+file = "stubs/countries/{path.countryId}.json"
+# /api/countries/morocco → stubs/countries/morocco.json
 ```
 
 ---
