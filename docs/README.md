@@ -32,6 +32,7 @@ Welcome to the **mockr** documentation — your complete guide to mocking, stubb
 | [Directory-Based Stubs](features/directory-stubs.md) | CRUD operations with one JSON file per resource |
 | [Dynamic File Resolution](features/dynamic-files.md) | `{source.field}` placeholders in file paths |
 | [Template Tokens](features/template-tokens.md) | `{{uuid}}`, `{{now}}`, `{{timestamp}}` in responses |
+| [Cross-Endpoint References](features/cross-endpoint-references.md) | `{{ref:...}}` syntax to reference data from other stub files with filtering and transformation |
 | [Response Transitions](features/response-transitions.md) | Time-based state progression across response cases |
 | [Record Mode](features/record-mode.md) | Proxy a real API, save responses, replay offline |
 | [Hot Reload](features/hot-reload.md) | Edit config files and see changes on the next request |
