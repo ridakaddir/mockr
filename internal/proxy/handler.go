@@ -17,6 +17,7 @@ type Handler struct {
 	apiPrefix   string                 // stripped from request path before matching + forwarding
 	transitions *transitionState       // time-based transition state
 	scheduler   *transitionScheduler   // deferred file mutations after persist append
+	stubWatcher *StubWatcher           // tracks cross-reference dependencies between stub files
 }
 
 // configLoader abstracts config.Loader so it can be mocked in tests.
@@ -27,15 +28,15 @@ type configLoader interface {
 }
 
 // NewHandler builds a new Handler with a fresh transition state.
-// NOTE: The handler created this way has no scheduler (scheduler is nil).
+// NOTE: The handler created this way has no scheduler or stub watcher.
 // Use NewHandlerWithTransitions when background transition mutations are needed.
 func NewHandler(loader configLoader, rp *httputil.ReverseProxy, recordMode bool, apiPrefix string) *Handler {
-	return NewHandlerWithTransitions(loader, rp, recordMode, apiPrefix, newTransitionState(), nil)
+	return NewHandlerWithTransitions(loader, rp, recordMode, apiPrefix, newTransitionState(), nil, nil)
 }
 
-// NewHandlerWithTransitions builds a Handler with the provided transition and scheduler state.
+// NewHandlerWithTransitions builds a Handler with the provided transition, scheduler, and stub watcher state.
 // Used by NewServer to share the transition state with the config reload callback.
-func NewHandlerWithTransitions(loader configLoader, rp *httputil.ReverseProxy, recordMode bool, apiPrefix string, ts *transitionState, sched *transitionScheduler) *Handler {
+func NewHandlerWithTransitions(loader configLoader, rp *httputil.ReverseProxy, recordMode bool, apiPrefix string, ts *transitionState, sched *transitionScheduler, sw *StubWatcher) *Handler {
 	// Normalise prefix: ensure it starts with / and has no trailing slash.
 	if apiPrefix != "" && !strings.HasPrefix(apiPrefix, "/") {
 		apiPrefix = "/" + apiPrefix
@@ -56,6 +57,7 @@ func NewHandlerWithTransitions(loader configLoader, rp *httputil.ReverseProxy, r
 		apiPrefix:   apiPrefix,
 		transitions: ts,
 		scheduler:   sched,
+		stubWatcher: sw,
 	}
 }
 
@@ -118,13 +120,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if c.Persist {
 			handled, createdPath := applyPersist(w, requestForExtraction, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams)
 			if handled {
-				// If this was an append (resource creation) on a route with
-				// transitions, schedule deferred background mutations so the
-				// created file transitions on disk over time.
-				if createdPath != "" && len(route.Transitions) > 0 && h.scheduler != nil {
-					// Create RefContext to capture request data for dynamic refs in transition defaults
-					refCtx := NewRefContext(requestForExtraction, bodyBytes, pathParams)
-					h.scheduler.Schedule(route, createdPath, h.loader.ConfigDir(), refCtx)
+				if createdPath != "" {
+					// Register newly created files with the stub watcher so
+					// that any cross-references they contain are tracked for
+					// automatic hot-reload.
+					if h.stubWatcher != nil {
+						h.stubWatcher.AddFile(createdPath)
+					}
+
+					// If this was an append (resource creation) on a route with
+					// transitions, schedule deferred background mutations so the
+					// created file transitions on disk over time.
+					if len(route.Transitions) > 0 && h.scheduler != nil {
+						// Create RefContext to capture request data for dynamic refs in transition defaults
+						refCtx := NewRefContext(requestForExtraction, bodyBytes, pathParams)
+						h.scheduler.Schedule(route, createdPath, h.loader.ConfigDir(), refCtx)
+					}
 				}
 				return
 			}

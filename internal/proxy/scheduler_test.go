@@ -410,7 +410,7 @@ func TestPostCreatesAndTransitionsInBackground(t *testing.T) {
 	sched := newTransitionScheduler(context.Background())
 	defer sched.Stop()
 
-	handler := NewHandlerWithTransitions(loader, nil, false, "", newTransitionState(), sched)
+	handler := NewHandlerWithTransitions(loader, nil, false, "", newTransitionState(), sched, nil)
 
 	// --- POST creates the deployment ---
 

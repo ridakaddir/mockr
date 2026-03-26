@@ -63,6 +63,14 @@ func ReadDir(dirPath string) ([]byte, error) {
 // Update reads a JSON object file, shallow-merges incoming fields, and writes back.
 // Returns the merged object.
 func Update(filePath string, incoming map[string]interface{}) (map[string]interface{}, error) {
+	// Guard: reject directories early with a clear error instead of a
+	// cryptic "read <path>: is a directory" from os.ReadFile.
+	if info, err := os.Stat(filePath); err == nil && info.IsDir() {
+		return nil, &ConfigError{
+			Msg: fmt.Sprintf("persist update target %q is a directory, not a file; check the 'file' field in the route case", filePath),
+		}
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -87,6 +95,7 @@ func Update(filePath string, incoming map[string]interface{}) (map[string]interf
 		return nil, err
 	}
 
+	notify(filePath, FileUpdated)
 	return existing, nil
 }
 
@@ -126,6 +135,7 @@ func AppendToDir(dirPath, key string, incoming map[string]interface{}) (string, 
 		return "", nil, err
 	}
 
+	notify(filePath, FileCreated)
 	return filePath, incoming, nil
 }
 
@@ -142,10 +152,13 @@ func DeleteFile(filePath string) error {
 		return fmt.Errorf("removing file %q: %w", filePath, err)
 	}
 
+	notify(filePath, FileDeleted)
 	return nil
 }
 
 // WriteStub marshals a map to JSON and writes it to a file with indentation.
+// NOTE: This is a low-level helper; it does NOT trigger change notifications.
+// Use AppendToDir, Update, or DeleteFile for operations that notify listeners.
 func WriteStub(filePath string, data map[string]interface{}) error {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {

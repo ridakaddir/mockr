@@ -336,13 +336,14 @@ func TestLoadDefaults_WithStaticRef(t *testing.T) {
 		t.Errorf("expected userField=userValue, got %v", result["userField"])
 	}
 
-	// Check that ref was resolved
-	models, ok := result["models"].([]interface{})
+	// Directory refs are preserved as live references in defaults so they
+	// resolve dynamically on each read (not baked in at creation time).
+	modelsRef, ok := result["models"].(string)
 	if !ok {
-		t.Fatalf("models should be an array")
+		t.Fatalf("models should be a string (preserved ref token), got %T", result["models"])
 	}
-	if len(models) != 1 {
-		t.Errorf("expected 1 model, got %d", len(models))
+	if !strings.Contains(modelsRef, "{{ref:") {
+		t.Errorf("expected models to contain a live ref token, got %v", modelsRef)
 	}
 }
 
@@ -384,18 +385,19 @@ func TestLoadDefaults_WithDynamicRef(t *testing.T) {
 		t.Errorf("expected environment=staging, got %v", result["environment"])
 	}
 
-	// Check that dynamic ref was resolved
-	models, ok := result["models"].([]interface{})
+	// Directory refs are preserved with dynamic placeholders resolved but the
+	// ref token itself intact so it resolves dynamically on each read.
+	modelsRef, ok := result["models"].(string)
 	if !ok {
-		t.Fatalf("models should be an array")
+		t.Fatalf("models should be a string (preserved ref token), got %T", result["models"])
 	}
-	if len(models) != 1 {
-		t.Errorf("expected 1 model, got %d", len(models))
+	// Dynamic placeholder {.env} should be resolved to "staging"
+	if !strings.Contains(modelsRef, "models/staging/") {
+		t.Errorf("expected dynamic placeholder to be resolved in ref, got %v", modelsRef)
 	}
-
-	model := models[0].(map[string]interface{})
-	if model["name"] != "Staging Model" {
-		t.Errorf("expected model name 'Staging Model', got %v", model["name"])
+	// But the ref itself should still be a raw token
+	if !strings.Contains(modelsRef, "{{ref:") {
+		t.Errorf("expected ref token to be preserved, got %v", modelsRef)
 	}
 }
 

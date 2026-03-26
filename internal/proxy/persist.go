@@ -165,8 +165,20 @@ func loadDefaults(defaults string, incoming map[string]interface{}, r *http.Requ
 	// Create RefContext for dynamic placeholder resolution
 	refCtx := NewRefContext(r, bodyBytes, pathParams)
 
-	// Resolve cross-endpoint references (with shared visited map for circular detection)
-	defaultsData, err = resolveRefsWithContext(defaultsData, configDir, visited, refCtx)
+	// Resolve dynamic placeholders inside {{ref:...}} tokens (e.g. {.endpointId} → "ep-123")
+	// but keep the ref tokens themselves intact so they remain as live references
+	// in the persisted file. This is critical: if we resolve refs here, the concrete
+	// value (e.g. an empty deployment array) gets baked into the file, preventing
+	// future reads from picking up new deployments.
+	defaultsData, err = resolveDynamicInRefs(defaultsData, refCtx)
+	if err != nil {
+		return nil, fmt.Errorf("resolving dynamic placeholders in defaults %q: %w", defaultsPath, err)
+	}
+
+	// Resolve file-based refs (single files, not directories) because they are
+	// static data. Directory refs (ending with /) are left as live references
+	// so they resolve dynamically on each read.
+	defaultsData, err = resolveFileRefs(defaultsData, configDir, visited)
 	if err != nil {
 		return nil, fmt.Errorf("resolving refs in defaults %q: %w", defaultsPath, err)
 	}

@@ -340,6 +340,22 @@ This resolves to defaults that load:
 - `models/staging/` directory (environment-specific models)
 - `configs/tenant-a/staging.json` file (tenant + environment config)
 
+### Live Directory References
+
+When a defaults file contains a `{{ref:...}}` token that points to a **directory** (path ending with `/`), the reference is preserved as a live token in the created file rather than being resolved at creation time. This means directory references resolve dynamically on every read, so they always reflect the current state of the referenced directory.
+
+For example, if `defaults/endpoint.json` contains:
+```json
+{
+  "endpointId": "{{uuid}}",
+  "deployedModels": "{{ref:stubs/deployments/{.endpointId}/?template=stubs/templates/deployed-model.json}}"
+}
+```
+
+When an endpoint is created, the `deployedModels` field is stored as `"{{ref:stubs/deployments/ep-123/?template=...}}"` (with `{.endpointId}` resolved to the concrete value). Each subsequent GET request resolves this reference against the current contents of the deployment directory — so newly created deployments appear immediately.
+
+File-based refs (not ending with `/`) are still resolved at creation time, since they point to static data.
+
 ### Background Transitions
 
 Dynamic refs work in **background transitions** by storing the original request context when the transition is scheduled:

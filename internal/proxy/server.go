@@ -22,10 +22,11 @@ type ServerOptions struct {
 
 // Server wraps the HTTP server and the config loader.
 type Server struct {
-	opts      ServerOptions
-	loader    *config.Loader
-	srv       *http.Server
-	scheduler *transitionScheduler
+	opts        ServerOptions
+	loader      *config.Loader
+	srv         *http.Server
+	scheduler   *transitionScheduler
+	stubWatcher *StubWatcher
 }
 
 // NewServer initialises the proxy server.
@@ -54,7 +55,17 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	handler := NewHandlerWithTransitions(loader, rp, opts.RecordMode, opts.ApiPrefix, ts, sched)
+	// Start the stub watcher to automatically re-evaluate cross-references
+	// when stub files change (e.g. deployment created → endpoint's
+	// deployedModels updates immediately).
+	stubWatcher := NewStubWatcher(StubWatcherOptions{
+		ConfigDir: loader.ConfigDir(),
+		OnUpdate: func() {
+			logger.Info("stub watcher: cross-reference dependencies updated")
+		},
+	})
+
+	handler := NewHandlerWithTransitions(loader, rp, opts.RecordMode, opts.ApiPrefix, ts, sched, stubWatcher)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
@@ -69,7 +80,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	return &Server{opts: opts, loader: loader, srv: srv, scheduler: sched}, nil
+	return &Server{opts: opts, loader: loader, srv: srv, scheduler: sched, stubWatcher: stubWatcher}, nil
 }
 
 // Loader returns the config loader, allowing other servers (e.g. gRPC) to
@@ -105,10 +116,12 @@ func (s *Server) Start(ctx context.Context) error {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = s.srv.Shutdown(shutCtx)
+		s.stubWatcher.Stop()
 		s.scheduler.Stop()
 		s.loader.Close()
 		return nil
 	case err := <-errCh:
+		s.stubWatcher.Stop()
 		s.scheduler.Stop()
 		s.loader.Close()
 		return err
