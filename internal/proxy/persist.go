@@ -32,7 +32,13 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 	switch strings.ToLower(c.Merge) {
 	case "update":
 		// Apply defaults if specified (enrich incoming data before persisting).
-		incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
+		var err error
+		incoming, err = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams, make(map[string]bool))
+		if err != nil {
+			logger.Error("loading defaults", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load defaults"})
+			return true, ""
+		}
 		updated, err := persist.Update(filePath, incoming)
 		if err != nil {
 			if persist.IsNotFound(err) {
@@ -57,7 +63,13 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 			return true, ""
 		}
 		// Apply defaults if specified (enrich incoming data before persisting).
-		incoming = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams)
+		var err error
+		incoming, err = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams, make(map[string]bool))
+		if err != nil {
+			logger.Error("loading defaults", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to apply defaults"})
+			return true, ""
+		}
 
 		// Key resolution: if the key field is configured but missing from the
 		// incoming record (after defaults), resolve it from path params, then
@@ -116,96 +128,116 @@ func resolveFilePath(filePath string, r *http.Request, bodyBytes []byte, configD
 	return absPath(filePath, configDir)
 }
 
-// loadDefaults reads a defaults JSON file, resolves template tokens ({{uuid}},
-// {{now}}, {{timestamp}}), and deep-merges the result under the incoming data
-// so that incoming (request body) fields win on conflicts.
+// loadDefaults reads a defaults JSON file, resolves dynamic placeholders and cross-endpoint
+// references, resolves template tokens ({{uuid}}, {{now}}, {{timestamp}}), and deep-merges
+// the result under the incoming data so that incoming (request body) fields win on conflicts.
 //
-// Returns incoming unchanged if defaults is empty or on any error (warnings logged).
-func loadDefaults(defaults string, incoming map[string]interface{},
-	r *http.Request, bodyBytes []byte, configDir, routePattern string,
-	pathParams map[string]string) map[string]interface{} {
+// Returns error instead of graceful degradation to ensure data integrity.
+func loadDefaults(defaults string, incoming map[string]interface{}, r *http.Request, bodyBytes []byte,
+	configDir, routePattern string, pathParams map[string]string, visited map[string]bool) (map[string]interface{}, error) {
 
 	if defaults == "" {
-		return incoming
+		return incoming, nil
 	}
 
 	defaultsPath := resolveFilePath(defaults, r, bodyBytes, configDir, routePattern, pathParams)
 
 	// Ensure resolved path stays within configDir to prevent directory traversal.
 	if configDir != "" {
-		absConfig, _ := filepath.Abs(configDir)
-		absDefaults, _ := filepath.Abs(defaultsPath)
+		absConfig, err := filepath.Abs(configDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolving config directory: %w", err)
+		}
+		absDefaults, err := filepath.Abs(defaultsPath)
+		if err != nil {
+			return nil, fmt.Errorf("resolving defaults path: %w", err)
+		}
 		if !strings.HasPrefix(absDefaults, absConfig+string(filepath.Separator)) && absDefaults != absConfig {
-			logger.Warn("persist defaults: path escapes config directory", "file", defaultsPath, "configDir", configDir)
-			return incoming
+			return nil, fmt.Errorf("defaults path escapes config directory: %s", defaultsPath)
 		}
 	}
 
 	defaultsData, err := os.ReadFile(defaultsPath)
 	if err != nil {
-		logger.Warn("persist defaults: cannot read file", "file", defaultsPath, "err", err)
-		return incoming
+		return nil, fmt.Errorf("reading defaults file %q: %w", defaultsPath, err)
 	}
 
-	resolved, err := renderTemplate(string(defaultsData))
+	// Create RefContext for dynamic placeholder resolution
+	refCtx := NewRefContext(r, bodyBytes, pathParams)
+
+	// Resolve cross-endpoint references (with shared visited map for circular detection)
+	defaultsData, err = resolveRefsWithContext(defaultsData, configDir, visited, refCtx)
 	if err != nil {
-		logger.Warn("persist defaults: template error", "file", defaultsPath, "err", err)
-		return incoming
+		return nil, fmt.Errorf("resolving refs in defaults %q: %w", defaultsPath, err)
+	}
+
+	// Render template tokens ({{uuid}}, {{now}}, {{timestamp}}) and request data placeholders ({.field})
+	resolved, err := renderTemplateWithData(string(defaultsData), refCtx)
+	if err != nil {
+		return nil, fmt.Errorf("rendering template in defaults %q: %w", defaultsPath, err)
 	}
 
 	var base map[string]interface{}
 	if err := json.Unmarshal([]byte(resolved), &base); err != nil {
-		logger.Warn("persist defaults: invalid JSON", "file", defaultsPath, "err", err)
-		return incoming
+		return nil, fmt.Errorf("parsing JSON in defaults %q: %w", defaultsPath, err)
 	}
 
-	return persist.DeepMerge(base, incoming)
+	return persist.DeepMerge(base, incoming), nil
 }
 
-// loadDefaultsStatic reads a defaults JSON file and returns its content as a map.
-// Unlike loadDefaults, it does not require an HTTP request context — it only
-// resolves the file path relative to configDir and runs template rendering.
+// loadDefaultsStatic reads a defaults JSON file, resolves cross-endpoint references,
+// and returns its content as a map. Used by the transition scheduler for deferred
+// (background) file mutations where no request is available.
 //
-// Used by the transition scheduler for deferred (background) file mutations
-// where no request is available.
+// The refCtx parameter provides the stored request context from when the transition
+// was originally scheduled, enabling dynamic placeholders to work in background transitions.
 //
-// Returns nil if defaults is empty, the file cannot be read, or parsing fails.
-func loadDefaultsStatic(defaults, configDir string) map[string]interface{} {
+// Returns error instead of graceful degradation to ensure data integrity.
+func loadDefaultsStatic(defaults, configDir string, visited map[string]bool, refCtx *RefContext) (map[string]interface{}, error) {
 	if defaults == "" {
-		return nil
+		return nil, nil
 	}
 
 	defaultsPath := absPath(defaults, configDir)
 
 	// Ensure resolved path stays within configDir to prevent directory traversal.
 	if configDir != "" {
-		absConfig, _ := filepath.Abs(configDir)
-		absDefaults, _ := filepath.Abs(defaultsPath)
+		absConfig, err := filepath.Abs(configDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolving config directory: %w", err)
+		}
+		absDefaults, err := filepath.Abs(defaultsPath)
+		if err != nil {
+			return nil, fmt.Errorf("resolving defaults path: %w", err)
+		}
 		if !strings.HasPrefix(absDefaults, absConfig+string(filepath.Separator)) && absDefaults != absConfig {
-			logger.Warn("deferred defaults: path escapes config directory", "file", defaultsPath, "configDir", configDir)
-			return nil
+			return nil, fmt.Errorf("defaults path escapes config directory: %s", defaultsPath)
 		}
 	}
 
 	defaultsData, err := os.ReadFile(defaultsPath)
 	if err != nil {
-		logger.Warn("deferred defaults: cannot read file", "file", defaultsPath, "err", err)
-		return nil
+		return nil, fmt.Errorf("reading defaults file %q: %w", defaultsPath, err)
 	}
 
-	resolved, err := renderTemplate(string(defaultsData))
+	// Resolve cross-endpoint references (using stored RefContext)
+	defaultsData, err = resolveRefsWithContext(defaultsData, configDir, visited, refCtx)
 	if err != nil {
-		logger.Warn("deferred defaults: template error", "file", defaultsPath, "err", err)
-		return nil
+		return nil, fmt.Errorf("resolving refs in defaults %q: %w", defaultsPath, err)
+	}
+
+	// Render template tokens ({{uuid}}, {{now}}, {{timestamp}}) and request data placeholders ({.field})
+	resolved, err := renderTemplateWithData(string(defaultsData), refCtx)
+	if err != nil {
+		return nil, fmt.Errorf("rendering template in defaults %q: %w", defaultsPath, err)
 	}
 
 	var base map[string]interface{}
 	if err := json.Unmarshal([]byte(resolved), &base); err != nil {
-		logger.Warn("deferred defaults: invalid JSON", "file", defaultsPath, "err", err)
-		return nil
+		return nil, fmt.Errorf("parsing JSON in defaults %q: %w", defaultsPath, err)
 	}
 
-	return base
+	return base, nil
 }
 
 // isDirectoryPath determines if a file path should be treated as a directory

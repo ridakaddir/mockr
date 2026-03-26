@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,7 +16,219 @@ import (
 )
 
 // refPattern matches "{{ref:path?params}}" tokens (including surrounding quotes)
-var refPattern = regexp.MustCompile(`"{{ref:([^}]+)}}"`)
+var refPattern = regexp.MustCompile(`"{{ref:([^}]*(?:\{[^}]+\}[^}]*)*)}}"`)
+
+// dynamicPlaceholderPattern matches placeholders inside ref tokens: {.field}, {path.x}, {query.x}, {header.x}
+var dynamicPlaceholderPattern = regexp.MustCompile(`\{(\.[\w.]+|path\.[\w]+|query\.[\w]+|header\.[\w-]+)\}`)
+
+// RefContext holds the context needed to resolve dynamic placeholders in refs
+type RefContext struct {
+	Body       map[string]interface{} // Request body fields
+	PathParams map[string]string      // URL path parameters
+	Query      url.Values             // Query parameters
+	Headers    http.Header            // Request headers
+}
+
+// sanitizeHeaders returns a copy of the given headers with sensitive entries removed.
+func sanitizeHeaders(h http.Header) http.Header {
+	if h == nil {
+		return nil
+	}
+	safe := make(http.Header, len(h))
+	for k, values := range h {
+		switch strings.ToLower(k) {
+		case "authorization", "cookie", "proxy-authorization":
+			// Skip sensitive headers
+			continue
+		default:
+			// Copy slice to avoid sharing underlying array
+			copied := make([]string, len(values))
+			copy(copied, values)
+			safe[k] = copied
+		}
+	}
+	return safe
+}
+
+// NewRefContext creates a RefContext from an HTTP request
+func NewRefContext(r *http.Request, bodyBytes []byte, pathParams map[string]string) *RefContext {
+	ctx := &RefContext{
+		PathParams: pathParams,
+		Query:      r.URL.Query(),
+		Headers:    sanitizeHeaders(r.Header),
+	}
+
+	// Parse body JSON if present
+	if len(bodyBytes) > 0 {
+		var body map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &body); err == nil {
+			ctx.Body = body
+		}
+	}
+	if ctx.Body == nil {
+		ctx.Body = make(map[string]interface{})
+	}
+
+	return ctx
+}
+
+// resolveRefsWithContext combines dynamic placeholder resolution + ref resolution.
+// NOTE: Dynamic placeholders are resolved only in the initial/top-level content passed
+// to this function. Any {{ref:...}} tokens found in files loaded during recursive
+// resolution are processed by resolveRefs without a RefContext, so placeholders inside
+// those nested refs are treated literally.
+func resolveRefsWithContext(content []byte, configDir string, visited map[string]bool, ctx *RefContext) ([]byte, error) {
+	// Step 1: Resolve dynamic placeholders in ref tokens in the initial content
+	content, err := resolveDynamicInRefs(content, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 2: Resolve the refs themselves (including any nested refs)
+	return resolveRefs(content, configDir, visited)
+}
+
+// resolveDynamicInRefs resolves {.field}, {path.x}, {query.x}, {header.x} placeholders
+// inside {{ref:...}} tokens in a single blob of content. It is intended to be called
+// on the top-level content before recursive ref resolution begins.
+func resolveDynamicInRefs(content []byte, ctx *RefContext) ([]byte, error) {
+	// Find all {{ref:...}} tokens
+	matches := refPattern.FindAllSubmatchIndex(content, -1)
+	if len(matches) == 0 {
+		return content, nil
+	}
+
+	// Check if any ref tokens contain placeholders
+	if ctx == nil {
+		for _, match := range matches {
+			refToken := string(content[match[2]:match[3]])
+			placeholders := dynamicPlaceholderPattern.FindAllStringSubmatch(refToken, -1)
+			if len(placeholders) > 0 {
+				return nil, fmt.Errorf("dynamic placeholders found in ref token %q but no request context available", refToken)
+			}
+		}
+		return content, nil
+	}
+
+	result := make([]byte, len(content))
+	copy(result, content)
+
+	// Process in reverse order to preserve indices
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		refToken := string(content[match[2]:match[3]]) // The path?params part
+
+		// Resolve placeholders in this ref token
+		resolved, err := resolvePlaceholders(refToken, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolving placeholders in ref %q: %w", refToken, err)
+		}
+
+		// Build new token
+		newToken := fmt.Sprintf(`"{{ref:%s}}"`, resolved)
+
+		// Replace in result using safe buffer approach
+		prefix := result[:match[0]]
+		suffix := result[match[1]:]
+		buf := make([]byte, 0, len(prefix)+len(newToken)+len(suffix))
+		buf = append(buf, prefix...)
+		buf = append(buf, newToken...)
+		buf = append(buf, suffix...)
+		result = buf
+	}
+
+	return result, nil
+}
+
+// resolvePlaceholders resolves all {placeholder} patterns in a ref token.
+// The caller must ensure ctx is not nil.
+func resolvePlaceholders(token string, ctx *RefContext) (string, error) {
+	result := token
+
+	// Find all placeholders
+	placeholders := dynamicPlaceholderPattern.FindAllStringSubmatch(token, -1)
+
+	for _, match := range placeholders {
+		placeholder := match[0] // e.g., {.endpointId}
+		key := match[1]         // e.g., .endpointId
+
+		value, err := resolveValue(key, ctx)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve %s: %w", placeholder, err)
+		}
+
+		// Sanitize the value to prevent injection of ref query parameters
+		safeValue, err := sanitizeRefPlaceholderValue(value)
+		if err != nil {
+			return "", fmt.Errorf("invalid value for %s: %w", placeholder, err)
+		}
+
+		result = strings.Replace(result, placeholder, safeValue, 1)
+	}
+
+	return result, nil
+}
+
+// sanitizeRefPlaceholderValue ensures that a placeholder value cannot inject or
+// override ref query parameters by containing reserved characters such as
+// '?', '&', or '='. Such values are rejected.
+func sanitizeRefPlaceholderValue(value string) (string, error) {
+	if strings.ContainsAny(value, "?&=") {
+		return "", fmt.Errorf("placeholder value contains reserved characters (?&=)")
+	}
+	return value, nil
+}
+
+// resolveValue resolves a single placeholder key to its value
+func resolveValue(key string, ctx *RefContext) (string, error) {
+	switch {
+	case strings.HasPrefix(key, "."):
+		// Body field: {.endpointId} or {.nested.field}
+		fieldPath := key[1:] // Remove leading dot
+		value := extractNestedValue(ctx.Body, fieldPath)
+		if value == nil {
+			return "", fmt.Errorf("field %q not found in request body", fieldPath)
+		}
+		strValue := fmt.Sprintf("%v", value)
+		if strValue == "" {
+			return "", fmt.Errorf("field %q resolved to empty string", fieldPath)
+		}
+		return strValue, nil
+
+	case strings.HasPrefix(key, "path."):
+		// Path param: {path.endpointId}
+		paramName := key[5:]
+		value, ok := ctx.PathParams[paramName]
+		if !ok {
+			return "", fmt.Errorf("path parameter %q not found", paramName)
+		}
+		if value == "" {
+			return "", fmt.Errorf("path parameter %q is empty", paramName)
+		}
+		return value, nil
+
+	case strings.HasPrefix(key, "query."):
+		// Query param: {query.version}
+		paramName := key[6:]
+		value := ctx.Query.Get(paramName)
+		if value == "" {
+			return "", fmt.Errorf("query parameter %q not found or empty", paramName)
+		}
+		return value, nil
+
+	case strings.HasPrefix(key, "header."):
+		// Header: {header.X-Tenant-Id}
+		headerName := key[7:]
+		value := ctx.Headers.Get(headerName)
+		if value == "" {
+			return "", fmt.Errorf("header %q not found or empty", headerName)
+		}
+		return value, nil
+
+	default:
+		return "", fmt.Errorf("unknown placeholder type: %s", key)
+	}
+}
 
 // resolveRefs processes all {{ref:...}} tokens in JSON content.
 // visited tracks paths to detect circular references.

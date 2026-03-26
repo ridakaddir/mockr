@@ -1,0 +1,14 @@
+{
+  "status": "Deploying",
+  "tenantId": "{path.tenantId}",
+  "environment": "{path.env}",
+  "region": "{.region}",
+  "createdAt": "{{now}}",
+  "deploymentId": "{{uuid}}",
+  "models": "{{ref:environments/{path.env}/models/}}",
+  "tenantConfig": "{{ref:tenants/{path.tenantId}/configs/{path.env}.json}}",
+  "metadata": {
+    "creator": "{header.X-User-Id}",
+    "version": "{.version}"
+  }
+}

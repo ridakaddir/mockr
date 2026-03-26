@@ -25,10 +25,13 @@ examples/
 │   └── stubs/
 │
 ├── cross-refs/               # Cross-endpoint references with {{ref:...}} syntax
-│   ├── mockr.toml            # Routes with {{ref:...}} tokens
+│   ├── mockr.toml            # Routes with {{ref:...}} tokens and dynamic refs in defaults
 │   └── stubs/
 │       ├── models/           # Model data files
 │       ├── endpoints/        # Endpoint files referencing models
+│       ├── environments/     # Environment-specific models for dynamic refs
+│       ├── tenants/          # Tenant-specific configs for dynamic refs
+│       ├── defaults/         # Defaults files with dynamic placeholders
 │       └── templates/        # Go templates for data transformation
 │
 ├── directory-stubs/          # Directory-based CRUD (one file per resource)
@@ -181,6 +184,19 @@ http :4000/endpoints/staging
 # Create new endpoint (inline JSON with references)
 http POST :4000/endpoints
 # Returns: {"availableModels": [active models only]}
+
+# Create environment-specific endpoint with dynamic defaults
+http POST :4000/api/acme/environments/prod/endpoints \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: alice" \
+  -d '{"endpointId": "ep-123", "region": "us-west-2", "version": "v2.1"}'
+# Creates endpoint with prod models and ACME tenant config
+
+http POST :4000/api/techcorp/environments/staging/endpoints \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: bob" \
+  -d '{"endpointId": "ep-456", "region": "eu-west-1", "version": "v1.5"}'
+# Creates endpoint with staging models and TechCorp tenant config
 ```
 
 **Key features demonstrated:**
@@ -192,8 +208,11 @@ http POST :4000/endpoints
 - **Template transformation**: Field renaming from `{id, modelName, version}` to `{modelId, name, modelVersion}`
 - **Combined filter + template**: Active models with transformed field names
 - **Inline JSON support**: References work in config `json = '...'` blocks
+- **Dynamic refs in defaults**: `{{ref:environments/{path.env}/models/}}` with request data placeholders
+- **Multi-tenant support**: Different configs per tenant using `{path.tenantId}` placeholders
+- **Environment-specific data**: Load different models per environment using `{path.env}` placeholders
 
-**Benefits**: Build interconnected APIs where endpoints dynamically reference each other's data. Changes to model data automatically appear in all referencing endpoints.
+**Benefits**: Build interconnected APIs where endpoints dynamically reference each other's data. Changes to model data automatically appear in all referencing endpoints. Support multi-tenant, multi-environment scenarios with context-aware defaults.
 
 ---
 
@@ -324,89 +343,6 @@ http :4000/user/johndoe                          # 200 — user profile
 ```
 
 The generated `mocks/` directory is gitignored — regenerate it any time. See [`openapi-generate/README.md`](openapi-generate/README.md) for the full workflow including format options and hot-reload tips.
-
----
-
-## transitions
-
-Two modes for simulating state changes over time.
-
-```sh
-mockr --config examples/transitions
-```
-
-### Request-time transitions (orders)
-
-Each GET evaluates elapsed time since the first request and serves the matching case. The response changes as time passes.
-
-```sh
-http :4000/orders/o123    # t=0s  → shipped
-# wait 30 seconds
-http :4000/orders/o123    # t=30s → out_for_delivery
-# wait 60 more seconds
-http :4000/orders/o123    # t=90s → delivered (stays here)
-```
-
-**Watch it change automatically:**
-
-```sh
-watch -n 5 'http :4000/orders/o123'
-```
-
-### Background transitions (deployments)
-
-POST creates a resource, and mockr **mutates the file on disk** in the background after a delay. All reads (GET by ID, list) see the updated state.
-
-```sh
-# 1. Create a deployment
-http POST :4000/deployments/ep-demo \
-  deploymentId=dep-001 name="my-app"
-
-# 2. GET immediately → "Deploying"
-http :4000/deployments/ep-demo/dep-001
-
-# 3. Wait 15+ seconds, GET again → "Ready"
-sleep 16 && http :4000/deployments/ep-demo/dep-001
-
-# 4. List all — also shows "Ready"
-http :4000/deployments/ep-demo
-```
-
-### Reset the timeline
-
-Trigger a hot reload to cancel pending background transitions and restart request-time timers:
-
-```sh
-touch examples/transitions/orders.toml
-```
-
----
-
-## record-mode
-
-Proxy a real API and automatically record responses as stub files. Each new path is recorded once — subsequent requests to the same path are served from the stub (`via=stub`).
-
-```sh
-mockr --config examples/record-mode \
-      --target https://jsonplaceholder.typicode.com \
-      --api-prefix /api \
-      --record
-```
-
-```sh
-http :4000/api/posts
-http :4000/api/posts/1
-http :4000/api/users
-http :4000/api/users/1
-```
-
-After recording, serve fully offline (no `--target`, no `--record`):
-
-```sh
-mockr --config examples/record-mode --api-prefix /api
-```
-
----
 
 ---
 

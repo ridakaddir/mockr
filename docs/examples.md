@@ -28,7 +28,7 @@ mockr --config examples/<name> --grpc-proto examples/<name>/<file>.proto
 |---|---|
 | [`examples/basic`](../examples/basic) | Static stubs, named cases, hot reload |
 | [`examples/conditions`](../examples/conditions) | Body / query / header condition routing |
-| [`examples/cross-refs`](../examples/cross-refs) | Cross-endpoint references with `{{ref:...}}` syntax, filtering, and templates |
+| [`examples/cross-refs`](../examples/cross-refs) | Cross-endpoint references with `{{ref:...}}` syntax, filtering, templates, and dynamic refs in defaults |
 | [`examples/directory-stubs`](../examples/directory-stubs) | Directory-based CRUD — each resource as a separate JSON file |
 | [`examples/dynamic-files`](../examples/dynamic-files) | `{source.field}` file path placeholders and named path parameters |
 | [`examples/transitions`](../examples/transitions) | Time-based response transitions and state progression |

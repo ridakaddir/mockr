@@ -1,0 +1,8 @@
+{
+  "id": "gpt-4",
+  "name": "GPT-4",
+  "status": "active",
+  "version": "1.0",
+  "tier": "premium",
+  "maxTokens": 8192
+}

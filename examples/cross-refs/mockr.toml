@@ -54,3 +54,16 @@ fallback = "created"
     "availableModels": "{{ref:stubs/models/?filter=status:active}}"
   }
   '''
+
+# POST /api/{tenantId}/environments/{env}/endpoints - Create environment-specific endpoint with dynamic defaults
+[[routes]]
+method = "POST"
+match = "/api/{tenantId}/environments/{env}/endpoints"
+fallback = "created"
+
+  [routes.cases.created]
+  status = 201
+  persist = true
+  merge = "append"
+  key = "endpointId"
+  defaults = "stubs/defaults/endpoint.json"

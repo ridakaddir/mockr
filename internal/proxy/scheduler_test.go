@@ -74,7 +74,7 @@ func TestScheduler_FiresAfterDuration(t *testing.T) {
 	sched := newTransitionScheduler(context.Background())
 	defer sched.Stop()
 
-	sched.Schedule(route, stubFile, dir)
+	sched.Schedule(route, stubFile, dir, nil)
 
 	// Verify file is still "Deploying" immediately.
 	data := readJSONFile(t, stubFile)
@@ -111,7 +111,7 @@ func TestScheduler_CancelledOnStop(t *testing.T) {
 	}
 
 	sched := newTransitionScheduler(context.Background())
-	sched.Schedule(route, stubFile, dir)
+	sched.Schedule(route, stubFile, dir, nil)
 
 	// Stop immediately — should cancel the pending mutation.
 	sched.Stop()
@@ -144,7 +144,7 @@ func TestScheduler_CancelledOnReset(t *testing.T) {
 	}
 
 	sched := newTransitionScheduler(context.Background())
-	sched.Schedule(route, stubFile, dir)
+	sched.Schedule(route, stubFile, dir, nil)
 
 	// Reset (simulating hot-reload) — should cancel the pending mutation.
 	sched.Reset(context.Background())
@@ -191,7 +191,7 @@ func TestScheduler_MultipleTransitions(t *testing.T) {
 	sched := newTransitionScheduler(context.Background())
 	defer sched.Stop()
 
-	sched.Schedule(route, stubFile, dir)
+	sched.Schedule(route, stubFile, dir, nil)
 
 	// At t=0, should be "building".
 	data := readJSONFile(t, stubFile)
@@ -234,7 +234,7 @@ func TestScheduler_NoPersistCaseSkipped(t *testing.T) {
 	sched := newTransitionScheduler(context.Background())
 	defer sched.Stop()
 
-	sched.Schedule(route, stubFile, dir)
+	sched.Schedule(route, stubFile, dir, nil)
 
 	// Give enough time for it to have fired if it were scheduled.
 	time.Sleep(1500 * time.Millisecond)
@@ -267,7 +267,7 @@ func TestScheduler_NoDefaultsSkipped(t *testing.T) {
 	sched := newTransitionScheduler(context.Background())
 	defer sched.Stop()
 
-	sched.Schedule(route, stubFile, dir)
+	sched.Schedule(route, stubFile, dir, nil)
 
 	time.Sleep(1500 * time.Millisecond)
 
@@ -301,7 +301,7 @@ func TestScheduler_DeletedFileBeforeTransition(t *testing.T) {
 	sched := newTransitionScheduler(context.Background())
 	defer sched.Stop()
 
-	sched.Schedule(route, stubFile, dir)
+	sched.Schedule(route, stubFile, dir, nil)
 
 	// Delete the file before the transition fires.
 	require.NoError(t, os.Remove(stubFile))
@@ -338,7 +338,7 @@ func TestScheduler_NonUpdateMergeSkipped(t *testing.T) {
 	sched := newTransitionScheduler(context.Background())
 	defer sched.Stop()
 
-	sched.Schedule(route, stubFile, dir)
+	sched.Schedule(route, stubFile, dir, nil)
 
 	time.Sleep(1500 * time.Millisecond)
 

@@ -41,20 +41,32 @@ json   = '{"id": "{{uuid}}", "created_at": "{{now}}", "ts": {{timestamp}}}'
 
 ## Usage in defaults files
 
-Template tokens also work in [defaults files](directory-stubs.md#defaults) for persistence operations:
+Template tokens work in [defaults files](directory-stubs.md#defaults) for persistence operations. Additionally, defaults files support **request data placeholders** that resolve to values from the current HTTP request:
 
 **`stubs/defaults/user.json`:**
 
 ```json
 {
   "userId": "{{uuid}}",
-  "role": "user",
+  "role": "user", 
+  "environment": "{.environment}",
+  "tenantId": "{header.X-Tenant-Id}",
   "active": true,
-  "createdAt": "{{now}}"
+  "createdAt": "{{now}}",
+  "models": "{{ref:models/{.environment}/}}"
 }
 ```
 
-Tokens are resolved before the defaults are merged with the request body.
+**Supported placeholders in defaults:**
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{.field}` | Request body field | `{.environment}` → `"prod"` |
+| `{path.param}` | URL path parameter | `{path.tenantId}` → `"acme"` |
+| `{query.param}` | Query parameter | `{query.version}` → `"v2"` |
+| `{header.Name}` | Request header | `{header.X-Tenant-Id}` → `"tenant123"` |
+
+All tokens and placeholders are resolved before the defaults are merged with the request body. This enables **dynamic defaults** that adapt based on the incoming request data.
 
 ---
 

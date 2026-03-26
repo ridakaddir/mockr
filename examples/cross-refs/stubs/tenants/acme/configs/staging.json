@@ -1,0 +1,9 @@
+{
+  "tier": "standard",
+  "limits": {
+    "requests": 1000,
+    "concurrency": 10
+  },
+  "features": ["basic-analytics"],
+  "support": "standard"
+}
