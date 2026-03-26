@@ -599,3 +599,471 @@ func TestResolveRefs_DirectoryIntentPreservation(t *testing.T) {
 		t.Errorf("expected empty array for nonexistent directory, got %d items", len(data))
 	}
 }
+
+// Tests for spread reference functionality
+
+func TestResolveSpreadRefs_BasicSpread(t *testing.T) {
+	// Setup temporary directory with test files
+	tempDir := t.TempDir()
+
+	// Create a source file to spread from
+	sourceFile := filepath.Join(tempDir, "source.json")
+	sourceData := `{"name": "John", "age": 30, "role": "admin"}`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	// Test basic spreading
+	content := []byte(`{
+		"id": "123",
+		"$spread": "{{ref:source.json}}",
+		"status": "active"
+	}`)
+
+	result, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Parse result
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	// Verify spread properties are present
+	if parsed["id"] != "123" {
+		t.Errorf("expected id to be '123', got %v", parsed["id"])
+	}
+	if parsed["name"] != "John" {
+		t.Errorf("expected name to be 'John', got %v", parsed["name"])
+	}
+	if parsed["age"] != float64(30) { // JSON numbers are float64
+		t.Errorf("expected age to be 30, got %v", parsed["age"])
+	}
+	if parsed["role"] != "admin" {
+		t.Errorf("expected role to be 'admin', got %v", parsed["role"])
+	}
+	if parsed["status"] != "active" {
+		t.Errorf("expected status to be 'active', got %v", parsed["status"])
+	}
+}
+
+func TestResolveSpreadRefs_PropertyOverride(t *testing.T) {
+	// Setup temporary directory with test files
+	tempDir := t.TempDir()
+
+	// Create a source file to spread from
+	sourceFile := filepath.Join(tempDir, "source.json")
+	sourceData := `{"name": "John", "status": "inactive", "role": "admin"}`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	// Test property override (explicit properties should override spread)
+	content := []byte(`{
+		"id": "123",
+		"$spread": "{{ref:source.json}}",
+		"status": "active"
+	}`)
+
+	result, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Parse result
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	// Verify that explicit properties override spread properties
+	if parsed["status"] != "active" {
+		t.Errorf("expected explicit status to override spread, got %v", parsed["status"])
+	}
+	if parsed["name"] != "John" {
+		t.Errorf("expected spread name to be preserved, got %v", parsed["name"])
+	}
+}
+
+func TestResolveSpreadRefs_WithPathParams(t *testing.T) {
+	// Setup temporary directory with test files
+	tempDir := t.TempDir()
+
+	// Create endpoint directory and file
+	endpointDir := filepath.Join(tempDir, "endpoints")
+	if err := os.MkdirAll(endpointDir, 0755); err != nil {
+		t.Fatalf("creating endpoint directory: %v", err)
+	}
+
+	endpointFile := filepath.Join(endpointDir, "123.json")
+	endpointData := `{"endpointId": "123", "name": "test-endpoint", "region": "us-east-1"}`
+	if err := os.WriteFile(endpointFile, []byte(endpointData), 0644); err != nil {
+		t.Fatalf("writing endpoint file: %v", err)
+	}
+
+	// Create deployment directory and file
+	deploymentDir := filepath.Join(tempDir, "deployments", "123")
+	if err := os.MkdirAll(deploymentDir, 0755); err != nil {
+		t.Fatalf("creating deployment directory: %v", err)
+	}
+
+	deploymentFile := filepath.Join(deploymentDir, "model1.json")
+	deploymentData := `{"modelId": "model1", "status": "ready"}`
+	if err := os.WriteFile(deploymentFile, []byte(deploymentData), 0644); err != nil {
+		t.Fatalf("writing deployment file: %v", err)
+	}
+
+	// Test spread with path parameters (simulating user's use case)
+	content := []byte(`{
+		"$spread": "{{ref:endpoints/{path.endpointId}.json}}",
+		"deployedModels": "{{ref:deployments/{path.endpointId}/}}"
+	}`)
+
+	// Create ref context with path parameters
+	refCtx := &RefContext{
+		PathParams: map[string]string{
+			"endpointId": "123",
+		},
+	}
+
+	result, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), refCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Parse result
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	// Verify spread worked with path parameters
+	if parsed["endpointId"] != "123" {
+		t.Errorf("expected endpointId to be '123', got %v", parsed["endpointId"])
+	}
+	if parsed["name"] != "test-endpoint" {
+		t.Errorf("expected name to be 'test-endpoint', got %v", parsed["name"])
+	}
+	if parsed["region"] != "us-east-1" {
+		t.Errorf("expected region to be 'us-east-1', got %v", parsed["region"])
+	}
+}
+
+func TestResolveSpreadRefs_NonObjectError(t *testing.T) {
+	// Setup temporary directory with test files
+	tempDir := t.TempDir()
+
+	// Create a source file that contains an array (not spreadable)
+	sourceFile := filepath.Join(tempDir, "array.json")
+	sourceData := `["item1", "item2", "item3"]`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	// Test spreading from non-object should error
+	content := []byte(`{
+		"id": "123",
+		"$spread": "{{ref:array.json}}"
+	}`)
+
+	_, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error when trying to spread non-object")
+	}
+	if !strings.Contains(err.Error(), "$spread ref must resolve to an object") {
+		t.Errorf("expected specific error about non-object, got: %v", err)
+	}
+}
+
+func TestResolveSpreadRefs_NoSpreadTokens(t *testing.T) {
+	// Test that content without spread tokens is unchanged
+	content := []byte(`{
+		"id": "123",
+		"regular": "{{ref:some/file.json}}",
+		"name": "test"
+	}`)
+
+	result, err := resolveSpreadRefs(content, "", make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should be unchanged since no spread tokens
+	if string(result) != string(content) {
+		t.Errorf("content should remain unchanged when no spread tokens present")
+	}
+}
+
+func TestResolveSpreadRefs_EmptyContent(t *testing.T) {
+	// Test with empty content
+	content := []byte("")
+
+	result, err := resolveSpreadRefs(content, "", make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if string(result) != string(content) {
+		t.Errorf("empty content should remain unchanged")
+	}
+}
+
+func TestResolveSpreadRefs_NewSyntaxValidation(t *testing.T) {
+	// Test that $spread field must contain a {{ref:...}} token
+	tempDir := t.TempDir()
+
+	// Test with invalid $spread value (not a ref token)
+	content := []byte(`{
+		"id": "123",
+		"$spread": "invalid-value"
+	}`)
+
+	_, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error for invalid $spread value")
+	}
+	if !strings.Contains(err.Error(), "$spread value must be a {{ref:...}} token") {
+		t.Errorf("expected specific error about invalid token, got: %v", err)
+	}
+
+	// Test with non-string $spread value
+	content2 := []byte(`{
+		"id": "123",
+		"$spread": 123
+	}`)
+
+	_, err = resolveSpreadRefs(content2, tempDir, make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error for non-string $spread value")
+	}
+	if !strings.Contains(err.Error(), "$spread field must be a string") {
+		t.Errorf("expected specific error about string type, got: %v", err)
+	}
+}
+
+func TestResolveSpreadRefs_NestedSpread(t *testing.T) {
+	// Test that $spread works in nested objects
+	tempDir := t.TempDir()
+
+	// Create source files
+	sourceFile := filepath.Join(tempDir, "user.json")
+	sourceData := `{"name": "John", "role": "admin"}`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	// Test nested spreading
+	content := []byte(`{
+		"id": "123",
+		"profile": {
+			"$spread": "{{ref:user.json}}",
+			"active": true
+		},
+		"status": "online"
+	}`)
+
+	result, err := resolveSpreadRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Parse result
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	// Verify structure
+	if parsed["id"] != "123" {
+		t.Errorf("expected id to be preserved")
+	}
+	if parsed["status"] != "online" {
+		t.Errorf("expected status to be preserved")
+	}
+
+	profile, ok := parsed["profile"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected profile to be an object")
+	}
+
+	// Verify spread properties are in nested object
+	if profile["name"] != "John" {
+		t.Errorf("expected name from spread in nested object")
+	}
+	if profile["role"] != "admin" {
+		t.Errorf("expected role from spread in nested object")
+	}
+	if profile["active"] != true {
+		t.Errorf("expected explicit property in nested object")
+	}
+}
+
+func TestResolveSpreadRefs_IntegrationUseCase(t *testing.T) {
+	// Integration test for user's exact use case
+	// This simulates the complete mockr-config structure and workflow
+
+	tempDir := t.TempDir()
+
+	// Create mockr-config-like structure
+	stubsDir := filepath.Join(tempDir, "stubs")
+	endpointsDir := filepath.Join(stubsDir, "endpoints")
+	deploymentsDir := filepath.Join(stubsDir, "deployments")
+	templatesDir := filepath.Join(stubsDir, "templates")
+
+	if err := os.MkdirAll(endpointsDir, 0755); err != nil {
+		t.Fatalf("creating endpoints dir: %v", err)
+	}
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		t.Fatalf("creating templates dir: %v", err)
+	}
+
+	// Create endpoint file (simulates what POST creates)
+	endpointID := "920316521215950848"
+	endpointFile := filepath.Join(endpointsDir, endpointID+".json")
+	endpointData := `{
+		"endpointId": "920316521215950848",
+		"endpointDisplayName": "my-vehicle-2-endpoint-1",
+		"description": "working demo",
+		"driftDetection": "disabled",
+		"enablePredictRequestResponseLogging": false
+	}`
+	if err := os.WriteFile(endpointFile, []byte(endpointData), 0644); err != nil {
+		t.Fatalf("writing endpoint file: %v", err)
+	}
+
+	// Create deployment directory and data
+	endpointDeploymentDir := filepath.Join(deploymentsDir, endpointID)
+	if err := os.MkdirAll(endpointDeploymentDir, 0755); err != nil {
+		t.Fatalf("creating deployment dir: %v", err)
+	}
+
+	deploymentFile := filepath.Join(endpointDeploymentDir, "deployment1.json")
+	deploymentData := `{
+		"deploymentId": "e9cf8112-4a0d-4903-95b6-268e6442d758",
+		"modelDisplayName": "new-deployment",
+		"status": "Ready",
+		"createTime": "2026-03-26T14:56:45Z",
+		"deploymentSpec": {
+			"acceleratorCount": 0,
+			"machineType": "e2-standard-2"
+		}
+	}`
+	if err := os.WriteFile(deploymentFile, []byte(deploymentData), 0644); err != nil {
+		t.Fatalf("writing deployment file: %v", err)
+	}
+
+	// Create template file
+	templateFile := filepath.Join(templatesDir, "deployed-model.json")
+	templateData := `{
+		"id": "{{.deploymentId}}",
+		"displayName": "{{.modelDisplayName}}",
+		"status": "{{.status}}",
+		"createTime": "{{.createTime}}",
+		"machineType": "{{.deploymentSpec.machineType}}",
+		"acceleratorCount": "{{.deploymentSpec.acceleratorCount}}"
+	}`
+	if err := os.WriteFile(templateFile, []byte(templateData), 0644); err != nil {
+		t.Fatalf("writing template file: %v", err)
+	}
+
+	// User's desired JSON structure using spread syntax
+	content := []byte(`{
+		"$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
+		"deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?template=stubs/templates/deployed-model.json}}"
+	}`)
+
+	// Create ref context with path parameters (simulates GET request)
+	refCtx := &RefContext{
+		PathParams: map[string]string{
+			"endpointId": endpointID,
+		},
+	}
+
+	// Test the complete pipeline: spread resolution -> dynamic placeholders -> regular refs
+	result, err := resolveRefsWithContext(content, tempDir, make(map[string]bool), refCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Parse and verify result
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	// Verify spread properties are present at root level
+	if parsed["endpointId"] != endpointID {
+		t.Errorf("expected endpointId to be %q, got %v", endpointID, parsed["endpointId"])
+	}
+	if parsed["endpointDisplayName"] != "my-vehicle-2-endpoint-1" {
+		t.Errorf("expected endpointDisplayName to be 'my-vehicle-2-endpoint-1', got %v", parsed["endpointDisplayName"])
+	}
+	if parsed["description"] != "working demo" {
+		t.Errorf("expected description to be 'working demo', got %v", parsed["description"])
+	}
+	if parsed["driftDetection"] != "disabled" {
+		t.Errorf("expected driftDetection to be 'disabled', got %v", parsed["driftDetection"])
+	}
+	if parsed["enablePredictRequestResponseLogging"] != false {
+		t.Errorf("expected enablePredictRequestResponseLogging to be false, got %v", parsed["enablePredictRequestResponseLogging"])
+	}
+
+	// Verify deployedModels array is populated
+	deployedModels, ok := parsed["deployedModels"].([]interface{})
+	if !ok {
+		t.Fatalf("deployedModels should be an array, got %T", parsed["deployedModels"])
+	}
+	if len(deployedModels) != 1 {
+		t.Errorf("expected 1 deployed model, got %d", len(deployedModels))
+	}
+
+	// Verify deployed model structure (template transformation applied)
+	if len(deployedModels) > 0 {
+		model, ok := deployedModels[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("deployed model should be an object, got %T", deployedModels[0])
+		}
+
+		if model["id"] != "e9cf8112-4a0d-4903-95b6-268e6442d758" {
+			t.Errorf("expected model id to be transformed, got %v", model["id"])
+		}
+		if model["displayName"] != "new-deployment" {
+			t.Errorf("expected model displayName to be transformed, got %v", model["displayName"])
+		}
+		if model["status"] != "Ready" {
+			t.Errorf("expected model status to be transformed, got %v", model["status"])
+		}
+		if model["createTime"] != "2026-03-26T14:56:45Z" {
+			t.Errorf("expected model createTime to be transformed, got %v", model["createTime"])
+		}
+
+		// Verify nested fields are flattened in template
+		if model["machineType"] != "e2-standard-2" {
+			t.Errorf("expected model machineType to be transformed, got %v", model["machineType"])
+		}
+		if model["acceleratorCount"] != "0" {
+			t.Errorf("expected model acceleratorCount to be transformed, got %v", model["acceleratorCount"])
+		}
+	}
+
+	// Verify structure - all fields should be at root level (flat structure)
+	// This is the key benefit of the spread syntax
+	expectedFields := []string{
+		"endpointId", "endpointDisplayName", "description",
+		"driftDetection", "enablePredictRequestResponseLogging", "deployedModels",
+	}
+	for _, field := range expectedFields {
+		if _, exists := parsed[field]; !exists {
+			t.Errorf("expected field %q to exist at root level", field)
+		}
+	}
+
+	// Verify no nested "endpoint" or "endpointData" objects (which would happen without spread)
+	for key := range parsed {
+		if strings.Contains(key, "endpoint") && key != "endpointId" && key != "endpointDisplayName" {
+			t.Errorf("unexpected nested endpoint object found: %q", key)
+		}
+	}
+}

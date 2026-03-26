@@ -13,6 +13,7 @@ Cross-endpoint references allow you to include data from other stub files in you
 {{ref:path?filter=field:value}}        # Filter by field equality
 {{ref:path?template=template.json}}    # Transform data shape using Go templates
 {{ref:path?filter=field:value&template=template.json}}  # Both filter and transform
+"$spread": "{{ref:path}}"              # Spread object properties into containing object
 ```
 
 ---
@@ -490,6 +491,152 @@ X-Tenant-Id: acme
 5. **Avoid deep nesting**: Keep reference chains shallow for maintainability
 
 6. **Handle empty cases**: Design UIs to handle empty arrays gracefully
+
+---
+
+## Object Spreading
+
+Object spreading allows you to merge the properties of a referenced object directly into the containing object using the `$spread` field with a `{{ref:...}}` reference. This is particularly useful for combining data from multiple sources into a flat response structure.
+
+### Syntax
+
+```
+"$spread": "{{ref:path}}"                    # Spread all properties from referenced object
+"$spread": "{{ref:path?filter=field:value}}" # Spread filtered properties
+"$spread": "{{ref:path?template=template.json}}" # Spread transformed properties
+```
+
+### Basic Spreading
+
+Spread all properties from a referenced file:
+
+```json
+{
+  "id": "123",
+  "$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
+  "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?template=stubs/templates/deployed-model.json}}"
+}
+```
+
+**Referenced file** (`stubs/endpoints/ep-123.json`):
+```json
+{
+  "endpointId": "ep-123",
+  "name": "Production API",
+  "region": "us-east-1",
+  "status": "active"
+}
+```
+
+**Result** (flat structure):
+```json
+{
+  "id": "123",
+  "endpointId": "ep-123",
+  "name": "Production API", 
+  "region": "us-east-1",
+  "status": "active",
+  "deployedModels": [...]
+}
+```
+
+### Property Override
+
+Explicit properties override spread properties when there are conflicts:
+
+```json
+{
+  "$spread": "{{ref:stubs/defaults/user.json}}",
+  "status": "override"  // This overrides any "status" from the spread object
+}
+```
+
+### Spreading with Dynamic Placeholders
+
+Combine spreading with path parameters and other dynamic placeholders:
+
+```json
+{
+  "$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
+  "environment": "{path.env}",
+  "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?filter=status:active}}"
+}
+```
+
+### Use Cases
+
+**1. Endpoint Enhancement**: Add computed fields to existing endpoint data
+```json
+{
+  "$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
+  "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/}}",
+  "lastUpdated": "{{now}}"
+}
+```
+
+**2. Configuration Merging**: Combine base configuration with environment-specific overrides
+```json
+{
+  "$spread": "{{ref:stubs/configs/base.json}}",
+  "environment": "{path.env}",
+  "version": "1.0.0"
+}
+```
+
+**3. Response Composition**: Build complex responses from multiple data sources
+```json
+{
+  "$spread": "{{ref:stubs/users/{path.userId}.json}}",
+  "permissions": "{{ref:stubs/roles/{.role}/permissions.json}}",
+  "preferences": "{{ref:stubs/users/{path.userId}/preferences.json}}"
+}
+```
+
+**4. Nested Object Spreading**: Spread properties into nested structures
+```json
+{
+  "id": "123",
+  "profile": {
+    "$spread": "{{ref:stubs/profiles/{path.userId}.json}}",
+    "active": true
+  },
+  "status": "online"
+}
+```
+
+### Limitations
+
+1. **Objects only**: Can only spread objects (`map[string]interface{}`), not arrays or primitives
+2. **Per-object scope**: Each `$spread` only merges into its immediate containing object, but you can use `$spread` inside nested objects for nested spreading
+3. **Key conflicts**: Later properties override earlier ones (explicit > spread)
+4. **Processing order**: Spread resolution happens before regular reference resolution
+
+### Error Handling
+
+**Invalid Syntax:**
+```json
+{
+  "$spread": "invalid-value"  // ERROR: Must be {{ref:...}} token
+}
+```
+
+**Non-Object Reference:**
+```json
+{
+  "$spread": "{{ref:stubs/arrays/list.json}}"  // ERROR: Cannot spread array
+}
+```
+
+The above will result in an error: `$spread ref must resolve to an object, got []interface {}`
+
+**Invalid Type:**
+```json
+{
+  "$spread": 123  // ERROR: Must be string
+}
+```
+
+Result: `$spread field must be a string, got int`
 
 ---
 
