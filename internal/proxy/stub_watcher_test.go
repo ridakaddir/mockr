@@ -31,6 +31,15 @@ func setupWatcherTest(t *testing.T, files map[string]string) string {
 	return dir
 }
 
+// newTestWatcher creates a StubWatcher and registers t.Cleanup(sw.Stop) to
+// ensure timers and listeners are cleaned up after the test.
+func newTestWatcher(t *testing.T, opts StubWatcherOptions) *StubWatcher {
+	t.Helper()
+	sw := NewStubWatcher(opts)
+	t.Cleanup(sw.Stop)
+	return sw
+}
+
 func TestStubWatcher_DiscoversDependencies(t *testing.T) {
 	dir := setupWatcherTest(t, map[string]string{
 		"stubs/endpoints/ep-123.json": `{
@@ -45,7 +54,7 @@ func TestStubWatcher_DiscoversDependencies(t *testing.T) {
 		"stubs/templates/deployed-model.json": `{"id": "{{.deploymentId}}"}`,
 	})
 
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir: dir,
 	})
 
@@ -64,7 +73,7 @@ func TestStubWatcher_NoDependencies(t *testing.T) {
 		"stubs/endpoints/ep-123.json": `{"endpointId": "ep-123", "name": "test"}`,
 	})
 
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir: dir,
 	})
 
@@ -81,7 +90,7 @@ func TestStubWatcher_IgnoresFileRefs(t *testing.T) {
 		"stubs/other.json": `{"key": "value"}`,
 	})
 
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir: dir,
 	})
 
@@ -99,7 +108,7 @@ func TestStubWatcher_NotifiesOnDependencyChange(t *testing.T) {
 
 	var updateCount atomic.Int32
 
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir:   dir,
 		OnUpdate:    func() { updateCount.Add(1) },
 		BatchWindow: 50 * time.Millisecond,
@@ -137,7 +146,7 @@ func TestStubWatcher_NotifiesOnUpdate(t *testing.T) {
 	require.NoError(t, os.WriteFile(deployFile, []byte(`{"deploymentId":"dep-1","status":"Deploying"}`), 0644))
 
 	var updateCount atomic.Int32
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir:   dir,
 		OnUpdate:    func() { updateCount.Add(1) },
 		BatchWindow: 50 * time.Millisecond,
@@ -169,7 +178,7 @@ func TestStubWatcher_NotifiesOnDelete(t *testing.T) {
 	require.NoError(t, os.WriteFile(deployFile, []byte(`{"deploymentId":"dep-1","status":"Ready"}`), 0644))
 
 	var updateCount atomic.Int32
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir:   dir,
 		OnUpdate:    func() { updateCount.Add(1) },
 		BatchWindow: 50 * time.Millisecond,
@@ -198,7 +207,7 @@ func TestStubWatcher_BatchesMultipleEvents(t *testing.T) {
 	require.NoError(t, os.MkdirAll(deployDir, 0755))
 
 	var updateCount atomic.Int32
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir:   dir,
 		OnUpdate:    func() { updateCount.Add(1) },
 		BatchWindow: 200 * time.Millisecond,
@@ -214,15 +223,16 @@ func TestStubWatcher_BatchesMultipleEvents(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Wait for batch processing.
-	time.Sleep(500 * time.Millisecond)
+	// Wait for batch processing, then verify batching occurred.
+	require.Eventually(t, func() bool {
+		return updateCount.Load() >= 1
+	}, 2*time.Second, 25*time.Millisecond,
+		"should have at least one update call")
 
 	// Should have batched all events into a single (or very few) update calls.
 	count := updateCount.Load()
 	assert.LessOrEqual(t, count, int32(2),
 		"multiple rapid events should be batched into few update calls, got %d", count)
-	assert.GreaterOrEqual(t, count, int32(1),
-		"should have at least one update call")
 }
 
 func TestStubWatcher_IgnoresUnrelatedChanges(t *testing.T) {
@@ -238,7 +248,7 @@ func TestStubWatcher_IgnoresUnrelatedChanges(t *testing.T) {
 	require.NoError(t, os.MkdirAll(modelsDir, 0755))
 
 	var updateCount atomic.Int32
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir:   dir,
 		OnUpdate:    func() { updateCount.Add(1) },
 		BatchWindow: 50 * time.Millisecond,
@@ -252,9 +262,10 @@ func TestStubWatcher_IgnoresUnrelatedChanges(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Wait and verify no update was triggered.
-	time.Sleep(200 * time.Millisecond)
-	assert.Equal(t, int32(0), updateCount.Load(),
+	// Verify no update is triggered within a reasonable window.
+	require.Never(t, func() bool {
+		return updateCount.Load() > 0
+	}, 200*time.Millisecond, 10*time.Millisecond,
 		"changes in unrelated directories should not trigger updates")
 }
 
@@ -264,7 +275,7 @@ func TestStubWatcher_AddFile_RegistersNewDependency(t *testing.T) {
 		"stubs/deployments/.gitkeep": "",
 	})
 
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir: dir,
 	})
 
@@ -292,7 +303,7 @@ func TestStubWatcher_RemoveFile(t *testing.T) {
 		}`,
 	})
 
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir: dir,
 	})
 
@@ -323,7 +334,7 @@ func TestStubWatcher_AffectedFiles(t *testing.T) {
 		}`,
 	})
 
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir: dir,
 	})
 
@@ -343,7 +354,7 @@ func TestStubWatcher_ConcurrentAccess(t *testing.T) {
 		}`,
 	})
 
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir:   dir,
 		OnUpdate:    func() {},
 		BatchWindow: 10 * time.Millisecond,
@@ -399,7 +410,7 @@ func TestStubWatcher_EndToEnd_DeploymentCreation(t *testing.T) {
 	require.NoError(t, os.MkdirAll(deployDir, 0755))
 
 	var updateCalled atomic.Int32
-	sw := NewStubWatcher(StubWatcherOptions{
+	sw := newTestWatcher(t, StubWatcherOptions{
 		ConfigDir:   dir,
 		OnUpdate:    func() { updateCalled.Add(1) },
 		BatchWindow: 50 * time.Millisecond,

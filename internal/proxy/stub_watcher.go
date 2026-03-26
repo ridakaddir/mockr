@@ -18,9 +18,10 @@ import (
 // surrounding JSON quotes so we can scan raw file bytes).
 var stubRefPattern = regexp.MustCompile(`\{\{ref:([^}]*(?:\{[^}]+\}[^}]*)*)\}\}`)
 
-// stubDynamicPattern matches dynamic placeholders like {.endpointId} inside ref
-// tokens, identifying where the concrete value will vary per file.
-var stubDynamicPattern = regexp.MustCompile(`\{\.[\w.]+\}`)
+// stubDynamicPattern matches dynamic placeholders inside ref tokens:
+// {.field}, {.nested.field}, {path.param}, {query.param}, {header.Name}.
+// These are replaced with "*" when building directory watch patterns.
+var stubDynamicPattern = regexp.MustCompile(`\{[^}]+\}`)
 
 // StubWatcher monitors persist change events and automatically re-evaluates
 // stub files whose cross-references point at directories that have changed.

@@ -32,15 +32,9 @@ type ChangeEvent struct {
 // Events are delivered in a batch to allow efficient bulk processing.
 type ChangeListener func(events []ChangeEvent)
 
-// listenerEntry wraps a listener with an active flag for safe removal.
-type listenerEntry struct {
-	fn     ChangeListener
-	active bool
-}
-
 var (
-	listenersMu sync.RWMutex
-	listeners   []*listenerEntry
+	listenersMu sync.Mutex
+	listeners   []ChangeListener
 )
 
 // OnChange registers a callback invoked whenever stub files are mutated via
@@ -48,14 +42,19 @@ var (
 // removes the listener. Safe for concurrent use.
 func OnChange(fn ChangeListener) func() {
 	listenersMu.Lock()
-	entry := &listenerEntry{fn: fn, active: true}
-	listeners = append(listeners, entry)
+	listeners = append(listeners, fn)
+	idx := len(listeners) - 1
 	listenersMu.Unlock()
 
 	return func() {
 		listenersMu.Lock()
-		entry.active = false
-		listenersMu.Unlock()
+		defer listenersMu.Unlock()
+		// Remove the entry from the slice to avoid leaking references.
+		if idx < len(listeners) && listeners[idx] != nil {
+			listeners = append(listeners[:idx], listeners[idx+1:]...)
+			// Invalidate this index so a double-call is a no-op.
+			idx = -1
+		}
 	}
 }
 
@@ -68,15 +67,17 @@ func ResetListeners() {
 }
 
 // notify delivers a single change event to all registered listeners.
+// Active listeners are snapshot-copied under the lock and then called
+// outside the lock so that listener code cannot deadlock the system.
 // Each listener is called inside a recover block to prevent a panicking
 // listener from crashing the server.
 func notify(filePath string, changeType ChangeType) {
-	listenersMu.RLock()
-	entries := make([]*listenerEntry, len(listeners))
-	copy(entries, listeners)
-	listenersMu.RUnlock()
+	listenersMu.Lock()
+	fns := make([]ChangeListener, len(listeners))
+	copy(fns, listeners)
+	listenersMu.Unlock()
 
-	if len(entries) == 0 {
+	if len(fns) == 0 {
 		return
 	}
 
@@ -87,8 +88,8 @@ func notify(filePath string, changeType ChangeType) {
 	}
 	batch := []ChangeEvent{event}
 
-	for _, entry := range entries {
-		if !entry.active {
+	for _, fn := range fns {
+		if fn == nil {
 			continue
 		}
 		func() {
@@ -97,7 +98,7 @@ func notify(filePath string, changeType ChangeType) {
 					logger.Error("persist change listener panicked", "err", r)
 				}
 			}()
-			entry.fn(batch)
+			fn(batch)
 		}()
 	}
 }

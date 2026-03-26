@@ -114,13 +114,16 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 func renderTemplate(s string) (string, error) {
 	// Temporarily replace {{ref:...}} tokens so the Go template engine doesn't
 	// try to interpret them ({{ref would be parsed as calling an undefined "ref" func).
+	// Use a UUID-based prefix to guarantee uniqueness and avoid collisions with
+	// literal content in the input.
 	type placeholder struct {
 		key   string
 		value string
 	}
+	baseKey := "__MOCKR_REF_" + uuid.New().String() + "_"
 	var placeholders []placeholder
 	preserved := refPattern.ReplaceAllStringFunc(s, func(match string) string {
-		key := fmt.Sprintf("__MOCKR_REF_%d__", len(placeholders))
+		key := fmt.Sprintf("%s%d__", baseKey, len(placeholders))
 		placeholders = append(placeholders, placeholder{key: key, value: match})
 		return key
 	})

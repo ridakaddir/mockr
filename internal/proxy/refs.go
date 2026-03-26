@@ -247,6 +247,7 @@ func resolveFileRefs(content []byte, configDir string, visited map[string]bool) 
 
 	// Process matches in reverse order to preserve indices.
 	result := content
+	changed := false
 	for i := len(matches) - 1; i >= 0; i-- {
 		match := matches[i]
 		token := string(content[match[2]:match[3]]) // path?params
@@ -280,10 +281,11 @@ func resolveFileRefs(content []byte, configDir string, visited map[string]bool) 
 		buf = append(buf, jsonBytes...)
 		buf = append(buf, suffix...)
 		result = buf
+		changed = true
 	}
 
-	// Only validate JSON if we actually made replacements.
-	if len(result) != len(content) {
+	// Validate JSON only when we actually made replacements.
+	if changed {
 		var validation interface{}
 		if err := json.Unmarshal(result, &validation); err != nil {
 			return nil, fmt.Errorf("invalid JSON after ref resolution: %w", err)
