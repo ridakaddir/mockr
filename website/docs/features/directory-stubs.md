@@ -114,7 +114,7 @@ fallback = "deleted"
 When `merge = "append"`, the `key` field determines the filename. mockr resolves the value using this fallback chain:
 
 1. **Request body** — if the body contains the `key` field, that value is used as the filename
-2. **Defaults** — if a `defaults` file provides the `key` field (e.g. via `{{uuid}}`), that value is used
+2. **Defaults** — if a `defaults` file provides the `key` field (e.g. via `{<!-- -->{uuid}<!-- -->}`), that value is used
 3. **Named path parameters** — if the route uses `{paramName}` and the param name matches `key`, the URL value is used
 4. **Path wildcards** — for patterns containing a single `*`, the matched segment from the URL path is used as the value
 5. **Query parameters** — URL query parameter matching the `key` name
@@ -192,7 +192,7 @@ defaults = "stubs/defaults/country.json"
 
 **How it works:**
 
-1. mockr reads the defaults file and resolves [template tokens](template-tokens.md) (`{{uuid}}` becomes a real UUID, `{{now}}` becomes a timestamp)
+1. mockr reads the defaults file and resolves [template tokens](template-tokens.md) (`{<!-- -->{uuid}<!-- -->}` becomes a real UUID, `{<!-- -->{now}<!-- -->}` becomes a timestamp)
 2. Deep-merges: defaults as the base, request body overlaid on top — **body always wins on conflicts**
 3. The merged result is saved to disk and returned as the response
 

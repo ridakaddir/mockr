@@ -28,9 +28,9 @@ mockr --config examples/<name> --grpc-proto examples/<name>/<file>.proto
 |---|---|
 | [`examples/basic`](../examples/basic) | Static stubs, named cases, hot reload |
 | [`examples/conditions`](../examples/conditions) | Body / query / header condition routing |
-| [`examples/cross-refs`](../examples/cross-refs) | Cross-endpoint references with `{{ref:...}}` syntax, filtering, templates, and dynamic refs in defaults |
+| [`examples/cross-refs`](../examples/cross-refs) | Cross-endpoint references with <code v-pre>{{ref:...}}</code> syntax, filtering, templates, and dynamic refs in defaults |
 | [`examples/directory-stubs`](../examples/directory-stubs) | Directory-based CRUD — each resource as a separate JSON file |
-| [`examples/dynamic-files`](../examples/dynamic-files) | `{source.field}` file path placeholders and named path parameters |
+| [`examples/dynamic-files`](../examples/dynamic-files) | <code v-pre>{source.field}</code> file path placeholders and named path parameters |
 | [`examples/transitions`](../examples/transitions) | Time-based response transitions and state progression |
 | [`examples/record-mode`](../examples/record-mode) | Proxy + auto-record workflow |
 | [`examples/openapi-generate`](../examples/openapi-generate) | Generate config from OpenAPI spec (Petstore example) |
