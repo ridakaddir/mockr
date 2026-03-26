@@ -13,6 +13,7 @@ Cross-endpoint references allow you to include data from other stub files in you
 {{ref:path?filter=field:value}}        # Filter by field equality
 {{ref:path?template=template.json}}    # Transform data shape using Go templates
 {{ref:path?filter=field:value&template=template.json}}  # Both filter and transform
+"...{{ref:path}}": ""                  # Spread object properties into containing object
 ```
 
 ---
@@ -490,6 +491,123 @@ X-Tenant-Id: acme
 5. **Avoid deep nesting**: Keep reference chains shallow for maintainability
 
 6. **Handle empty cases**: Design UIs to handle empty arrays gracefully
+
+---
+
+## Object Spreading
+
+Object spreading allows you to merge the properties of a referenced object directly into the containing object using the `...{{ref:...}}` syntax. This is particularly useful for combining data from multiple sources into a flat response structure.
+
+### Syntax
+
+```
+"...{{ref:path}}": ""                    # Spread all properties from referenced object
+"...{{ref:path?filter=field:value}}": "" # Spread filtered properties
+"...{{ref:path?template=template.json}}": "" # Spread transformed properties
+```
+
+### Basic Spreading
+
+Spread all properties from a referenced file:
+
+```json
+{
+  "id": "123",
+  "...{{ref:stubs/endpoints/{path.endpointId}.json}}": "",
+  "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?template=stubs/templates/deployed-model.json}}"
+}
+```
+
+**Referenced file** (`stubs/endpoints/ep-123.json`):
+```json
+{
+  "endpointId": "ep-123",
+  "name": "Production API",
+  "region": "us-east-1",
+  "status": "active"
+}
+```
+
+**Result** (flat structure):
+```json
+{
+  "id": "123",
+  "endpointId": "ep-123",
+  "name": "Production API", 
+  "region": "us-east-1",
+  "status": "active",
+  "deployedModels": [...]
+}
+```
+
+### Property Override
+
+Explicit properties override spread properties when there are conflicts:
+
+```json
+{
+  "...{{ref:stubs/defaults/user.json}}": "",
+  "status": "override"  // This overrides any "status" from the spread object
+}
+```
+
+### Spreading with Dynamic Placeholders
+
+Combine spreading with path parameters and other dynamic placeholders:
+
+```json
+{
+  "...{{ref:stubs/endpoints/{path.endpointId}.json}}": "",
+  "environment": "{path.env}",
+  "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?filter=status:active}}"
+}
+```
+
+### Use Cases
+
+**1. Endpoint Enhancement**: Add computed fields to existing endpoint data
+```json
+{
+  "...{{ref:stubs/endpoints/{path.endpointId}.json}}": "",
+  "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/}}",
+  "lastUpdated": "{{now}}"
+}
+```
+
+**2. Configuration Merging**: Combine base configuration with environment-specific overrides
+```json
+{
+  "...{{ref:stubs/configs/base.json}}": "",
+  "...{{ref:stubs/configs/{path.env}.json}}": "",
+  "version": "1.0.0"
+}
+```
+
+**3. Response Composition**: Build complex responses from multiple data sources
+```json
+{
+  "...{{ref:stubs/users/{path.userId}.json}}": "",
+  "permissions": "{{ref:stubs/roles/{.role}/permissions.json}}",
+  "preferences": "{{ref:stubs/users/{path.userId}/preferences.json}}"
+}
+```
+
+### Limitations
+
+1. **Objects only**: Can only spread objects (`map[string]interface{}`), not arrays or primitives
+2. **Single level**: Spreading applies to the immediate object, not nested structures  
+3. **Key conflicts**: Later properties override earlier ones (explicit > spread)
+4. **Processing order**: Spread resolution happens before regular reference resolution
+
+### Error Handling
+
+```json
+{
+  "...{{ref:stubs/arrays/list.json}}": ""  // ERROR: Cannot spread array
+}
+```
+
+The above will result in an error: `spread ref must resolve to an object, got []interface {}`
 
 ---
 

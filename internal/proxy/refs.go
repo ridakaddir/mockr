@@ -18,6 +18,9 @@ import (
 // refPattern matches "{{ref:path?params}}" tokens (including surrounding quotes)
 var refPattern = regexp.MustCompile(`"{{ref:([^}]*(?:\{[^}]+\}[^}]*)*)}}"`)
 
+// spreadRefPattern matches "...{{ref:path?params}}" tokens for object spreading
+var spreadRefPattern = regexp.MustCompile(`"\.\.\.{{ref:([^}]*(?:\{[^}]+\}[^}]*)*)}}"`)
+
 // dynamicPlaceholderPattern matches placeholders inside ref tokens: {.field}, {path.x}, {query.x}, {header.x}
 var dynamicPlaceholderPattern = regexp.MustCompile(`\{(\.[\w.]+|path\.[\w]+|query\.[\w]+|header\.[\w-]+)\}`)
 
@@ -78,13 +81,19 @@ func NewRefContext(r *http.Request, bodyBytes []byte, pathParams map[string]stri
 // resolution are processed by resolveRefs without a RefContext, so placeholders inside
 // those nested refs are treated literally.
 func resolveRefsWithContext(content []byte, configDir string, visited map[string]bool, ctx *RefContext) ([]byte, error) {
-	// Step 1: Resolve dynamic placeholders in ref tokens in the initial content
-	content, err := resolveDynamicInRefs(content, ctx)
+	// Step 1: Resolve spread references first (they need to operate on the original JSON structure)
+	content, err := resolveSpreadRefs(content, configDir, visited, ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 2: Resolve the refs themselves (including any nested refs)
+	// Step 2: Resolve dynamic placeholders in ref tokens in the remaining content
+	content, err = resolveDynamicInRefs(content, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 3: Resolve the refs themselves (including any nested refs)
 	return resolveRefs(content, configDir, visited)
 }
 
@@ -635,4 +644,143 @@ func executeTemplate(tmpl *template.Template, data interface{}) (interface{}, er
 		return nil, fmt.Errorf("parsing template output: %w", err)
 	}
 	return result, nil
+}
+
+// resolveSpreadRefs processes all spread references "...{{ref:...}}" in content
+// and spreads the referenced object properties into the containing object
+func resolveSpreadRefs(content []byte, configDir string, visited map[string]bool, refCtx *RefContext) ([]byte, error) {
+	// Skip processing if content is empty or whitespace-only
+	if len(content) == 0 || len(strings.TrimSpace(string(content))) == 0 {
+		return content, nil
+	}
+
+	// Find all spread ref tokens
+	matches := spreadRefPattern.FindAllSubmatchIndex(content, -1)
+	if len(matches) == 0 {
+		return content, nil
+	}
+
+	// Process matches in reverse order to preserve indices
+	result := make([]byte, len(content))
+	copy(result, content)
+
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		refToken := string(content[match[2]:match[3]]) // The path?params part
+
+		// Resolve this spread reference to get object properties
+		spreadObj, err := processSpreadRef(refToken, configDir, visited, refCtx)
+		if err != nil {
+			return nil, fmt.Errorf("resolving spread ref %q: %w", refToken, err)
+		}
+
+		// Replace the spread token with the object properties
+		result, err = replaceSpreadToken(result, spreadObj, match[0], match[1])
+		if err != nil {
+			return nil, fmt.Errorf("replacing spread token %q: %w", refToken, err)
+		}
+	}
+
+	// Validate that the result is still valid JSON after replacements
+	var validation interface{}
+	if err := json.Unmarshal(result, &validation); err != nil {
+		return nil, fmt.Errorf("invalid JSON after spread ref resolution: %w", err)
+	}
+
+	return result, nil
+}
+
+// processSpreadRef resolves a single spread reference and returns the object to be spread
+func processSpreadRef(refToken string, configDir string, visited map[string]bool, refCtx *RefContext) (map[string]interface{}, error) {
+	// First resolve any dynamic placeholders in the ref token
+	if refCtx != nil {
+		resolved, err := resolvePlaceholders(refToken, refCtx)
+		if err != nil {
+			return nil, fmt.Errorf("resolving placeholders in spread ref %q: %w", refToken, err)
+		}
+		refToken = resolved
+	}
+
+	// Resolve the reference using existing logic
+	resolved, err := resolveRefToken(refToken, configDir, visited)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure the result is an object that can be spread
+	obj, ok := resolved.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("spread ref must resolve to an object, got %T", resolved)
+	}
+
+	return obj, nil
+}
+
+// replaceSpreadToken replaces a spread token with object properties in JSON
+func replaceSpreadToken(content []byte, spreadObj map[string]interface{}, tokenStart, tokenEnd int) ([]byte, error) {
+	// Parse the entire JSON structure
+	var parsed interface{}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		return nil, fmt.Errorf("parsing JSON for spread replacement: %w", err)
+	}
+
+	// Convert the parsed structure and perform the spreading
+	result, err := performSpreadReplacement(parsed, string(content[tokenStart:tokenEnd]), spreadObj)
+	if err != nil {
+		return nil, err
+	}
+
+	// Marshal the result back to JSON
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling spread result: %w", err)
+	}
+
+	return resultBytes, nil
+}
+
+// performSpreadReplacement recursively finds and replaces spread tokens in the parsed JSON structure
+func performSpreadReplacement(data interface{}, spreadToken string, spreadObj map[string]interface{}) (interface{}, error) {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		// Check if this object contains the spread token in its keys
+		newObj := make(map[string]interface{})
+
+		// First pass: identify spread token and collect other properties
+		for key, value := range v {
+			// Check if the key contains the spread token pattern
+			if strings.Contains(key, "...{{ref:") {
+				// Add all spread properties
+				for spreadKey, spreadValue := range spreadObj {
+					newObj[spreadKey] = spreadValue
+				}
+				// Skip adding the spread token key itself
+			} else {
+				// Recursively process nested structures
+				processed, err := performSpreadReplacement(value, spreadToken, spreadObj)
+				if err != nil {
+					return nil, err
+				}
+				newObj[key] = processed
+			}
+		}
+
+		return newObj, nil
+
+	case []interface{}:
+		// Process arrays recursively
+		newArray := make([]interface{}, len(v))
+		for i, item := range v {
+			processed, err := performSpreadReplacement(item, spreadToken, spreadObj)
+			if err != nil {
+				return nil, err
+			}
+			newArray[i] = processed
+		}
+		return newArray, nil
+
+	default:
+		// Return primitive values as-is
+		return data, nil
+	}
 }
