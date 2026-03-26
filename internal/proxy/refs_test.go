@@ -514,3 +514,88 @@ func TestResolveRefs_InvalidJSONAfterResolution(t *testing.T) {
 		t.Errorf("error should mention the problematic file, got: %v", err)
 	}
 }
+
+func TestResolveRefs_DirectoryTraversalPrevention(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Test directory traversal in ref path
+	content := []byte(`{"data": "{{ref:../secret.json}}"}`)
+	_, err := resolveRefs(content, tempDir, make(map[string]bool))
+	if err == nil {
+		t.Fatalf("expected error for directory traversal")
+	}
+	if !strings.Contains(err.Error(), "directory traversal not allowed") {
+		t.Errorf("error should mention directory traversal prevention, got: %v", err)
+	}
+
+	// Test absolute path in ref
+	content = []byte(`{"data": "{{ref:/etc/passwd}}"}`)
+	_, err = resolveRefs(content, tempDir, make(map[string]bool))
+	if err == nil {
+		t.Fatalf("expected error for absolute path")
+	}
+	if !strings.Contains(err.Error(), "absolute paths not allowed") {
+		t.Errorf("error should mention absolute path prevention, got: %v", err)
+	}
+}
+
+func TestResolveRefs_TemplatePathTraversalPrevention(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		t.Fatalf("creating test directory: %v", err)
+	}
+
+	// Create test file
+	file1 := filepath.Join(dataDir, "1.json")
+	if err := os.WriteFile(file1, []byte(`{"id": "1", "name": "Alice"}`), 0644); err != nil {
+		t.Fatalf("writing test file: %v", err)
+	}
+
+	// Test directory traversal in template path
+	content := []byte(`{"data": "{{ref:data/?template=../../../etc/passwd}}"}`)
+	_, err := resolveRefs(content, tempDir, make(map[string]bool))
+	if err == nil {
+		t.Fatalf("expected error for template directory traversal")
+	}
+	if !strings.Contains(err.Error(), "directory traversal not allowed in template") {
+		t.Errorf("error should mention template directory traversal prevention, got: %v", err)
+	}
+
+	// Test absolute path in template
+	content = []byte(`{"data": "{{ref:data/?template=/etc/passwd}}"}`)
+	_, err = resolveRefs(content, tempDir, make(map[string]bool))
+	if err == nil {
+		t.Fatalf("expected error for absolute template path")
+	}
+	if !strings.Contains(err.Error(), "absolute paths not allowed in template") {
+		t.Errorf("error should mention absolute template path prevention, got: %v", err)
+	}
+}
+
+func TestResolveRefs_DirectoryIntentPreservation(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Test that directory intent is preserved even when directory doesn't exist yet
+	content := []byte(`{"data": "{{ref:nonexistent/}}"}`)
+	result, err := resolveRefs(content, tempDir, make(map[string]bool))
+
+	// persist.ReadDir returns [] for nonexistent directories, so this should succeed
+	if err != nil {
+		t.Fatalf("unexpected error for nonexistent directory: %v", err)
+	}
+
+	// Parse result to verify the empty array was returned
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	data, ok := parsed["data"].([]interface{})
+	if !ok {
+		t.Fatalf("data should be an array")
+	}
+	if len(data) != 0 {
+		t.Errorf("expected empty array for nonexistent directory, got %d items", len(data))
+	}
+}

@@ -4,7 +4,7 @@
 
 ---
 
-mockr supports template tokens in inline JSON values and defaults files. Tokens are replaced with generated values or referenced data at request time.
+mockr supports template tokens in inline JSON values, file-based stubs, directory aggregations, and defaults files. Tokens are replaced with generated values or referenced data at request time.
 
 ## Available tokens
 
@@ -60,13 +60,15 @@ Tokens are resolved before the defaults are merged with the request body.
 
 ## Usage in gRPC stubs
 
-Template tokens work identically in gRPC stub responses:
+Standard template tokens (`{{uuid}}`, `{{now}}`, `{{timestamp}}`) work identically in gRPC stub responses:
 
 ```toml
 [grpc_routes.cases.ok]
 status = 0
 json   = '{"userId": "{{uuid}}", "createdAt": "{{now}}"}'
 ```
+
+**Note:** Cross-endpoint references (`{{ref:...}}`) are currently supported for HTTP stubs only, not gRPC.
 
 ---
 

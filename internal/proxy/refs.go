@@ -49,8 +49,14 @@ func resolveRefs(content []byte, configDir string, visited map[string]bool) ([]b
 			return nil, fmt.Errorf("marshalling ref result: %w", err)
 		}
 
-		// Replace the token (including quotes) with the JSON value
-		result = append(result[:match[0]], append(jsonBytes, result[match[1]:]...)...)
+		// Replace the token (including quotes) with the JSON value using a new buffer
+		prefix := result[:match[0]]
+		suffix := result[match[1]:]
+		buf := make([]byte, 0, len(prefix)+len(jsonBytes)+len(suffix))
+		buf = append(buf, prefix...)
+		buf = append(buf, jsonBytes...)
+		buf = append(buf, suffix...)
+		result = buf
 	}
 
 	// Validate that the result is still valid JSON after replacements
@@ -70,10 +76,34 @@ func resolveRefToken(token string, configDir string, visited map[string]bool) (i
 		return nil, err
 	}
 
-	// Resolve relative path
+	// Prevent directory traversal and absolute path attacks
+	if filepath.IsAbs(path) {
+		return nil, fmt.Errorf("absolute paths not allowed in ref tokens: %s", path)
+	}
+	if strings.Contains(path, "..") {
+		return nil, fmt.Errorf("directory traversal not allowed in ref tokens: %s", path)
+	}
+
+	// Preserve directory intent before path resolution
+	isDirectoryIntent := strings.HasSuffix(path, "/")
+
+	// Resolve relative path within configDir
 	absPath := path
-	if configDir != "" && !filepath.IsAbs(path) {
+	if configDir != "" {
 		absPath = filepath.Join(configDir, path)
+
+		// Ensure resolved path stays within configDir
+		absConfig, err := filepath.Abs(configDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolving config directory: %w", err)
+		}
+		absResolved, err := filepath.Abs(absPath)
+		if err != nil {
+			return nil, fmt.Errorf("resolving reference path: %w", err)
+		}
+		if !strings.HasPrefix(absResolved, absConfig+string(filepath.Separator)) && absResolved != absConfig {
+			return nil, fmt.Errorf("reference path escapes config directory: %s", path)
+		}
 	}
 
 	// Check for circular reference
@@ -84,7 +114,7 @@ func resolveRefToken(token string, configDir string, visited map[string]bool) (i
 	defer delete(visited, absPath)
 
 	// Load data from file or directory
-	data, err := loadRefData(absPath)
+	data, err := loadRefData(absPath, isDirectoryIntent)
 	if err != nil {
 		return nil, err
 	}
@@ -112,10 +142,32 @@ func resolveRefToken(token string, configDir string, visited map[string]bool) (i
 
 	// Apply template if specified
 	if templatePath != "" {
-		absTemplatePath := templatePath
-		if configDir != "" && !filepath.IsAbs(templatePath) {
-			absTemplatePath = filepath.Join(configDir, templatePath)
+		// Prevent directory traversal and absolute path attacks for templates
+		if filepath.IsAbs(templatePath) {
+			return nil, fmt.Errorf("absolute paths not allowed in template tokens: %s", templatePath)
 		}
+		if strings.Contains(templatePath, "..") {
+			return nil, fmt.Errorf("directory traversal not allowed in template tokens: %s", templatePath)
+		}
+
+		absTemplatePath := templatePath
+		if configDir != "" {
+			absTemplatePath = filepath.Join(configDir, templatePath)
+
+			// Ensure template path stays within configDir
+			absConfig, err := filepath.Abs(configDir)
+			if err != nil {
+				return nil, fmt.Errorf("resolving config directory for template: %w", err)
+			}
+			absTemplate, err := filepath.Abs(absTemplatePath)
+			if err != nil {
+				return nil, fmt.Errorf("resolving template path: %w", err)
+			}
+			if !strings.HasPrefix(absTemplate, absConfig+string(filepath.Separator)) && absTemplate != absConfig {
+				return nil, fmt.Errorf("template path escapes config directory: %s", templatePath)
+			}
+		}
+
 		data, err = applyTemplate(data, absTemplatePath)
 		if err != nil {
 			return nil, err
@@ -168,9 +220,9 @@ func parseRefToken(token string) (path string, filters map[string]string, templa
 }
 
 // loadRefData loads data from a file or directory
-func loadRefData(absPath string) (interface{}, error) {
-	// Check if it's a directory (ends with / or is a directory on disk)
-	isDir := strings.HasSuffix(absPath, "/")
+func loadRefData(absPath string, directoryIntent bool) (interface{}, error) {
+	// Check if it's a directory (explicit intent or is a directory on disk)
+	isDir := directoryIntent
 	if !isDir {
 		info, err := os.Stat(absPath)
 		if err == nil && info.IsDir() {

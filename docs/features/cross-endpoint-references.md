@@ -138,6 +138,24 @@ This workflow:
 
 ---
 
+## Security Considerations
+
+Cross-endpoint references are restricted for security:
+
+- **Path Traversal Prevention**: References cannot use `../` or absolute paths
+- **Config Directory Boundary**: All referenced files must be within the config directory
+- **Template Path Validation**: Template paths follow the same restrictions
+- **No External File Access**: References cannot read files outside the project directory
+
+Examples of blocked references:
+```json
+{"data": "{{ref:../secret.json}}"}           // ❌ Directory traversal
+{"data": "{{ref:/etc/passwd}}"}              // ❌ Absolute path  
+{"data": "{{ref:data/?template=../tpl.json}}"} // ❌ Template traversal
+```
+
+---
+
 ## Advanced Features
 
 ### Nested References
