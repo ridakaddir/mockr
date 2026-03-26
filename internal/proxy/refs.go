@@ -29,12 +29,33 @@ type RefContext struct {
 	Headers    http.Header            // Request headers
 }
 
+// sanitizeHeaders returns a copy of the given headers with sensitive entries removed.
+func sanitizeHeaders(h http.Header) http.Header {
+	if h == nil {
+		return nil
+	}
+	safe := make(http.Header, len(h))
+	for k, values := range h {
+		switch strings.ToLower(k) {
+		case "authorization", "cookie", "proxy-authorization":
+			// Skip sensitive headers
+			continue
+		default:
+			// Copy slice to avoid sharing underlying array
+			copied := make([]string, len(values))
+			copy(copied, values)
+			safe[k] = copied
+		}
+	}
+	return safe
+}
+
 // NewRefContext creates a RefContext from an HTTP request
 func NewRefContext(r *http.Request, bodyBytes []byte, pathParams map[string]string) *RefContext {
 	ctx := &RefContext{
 		PathParams: pathParams,
 		Query:      r.URL.Query(),
-		Headers:    r.Header,
+		Headers:    sanitizeHeaders(r.Header),
 	}
 
 	// Parse body JSON if present
@@ -51,28 +72,41 @@ func NewRefContext(r *http.Request, bodyBytes []byte, pathParams map[string]stri
 	return ctx
 }
 
-// resolveRefsWithContext combines dynamic placeholder resolution + ref resolution
+// resolveRefsWithContext combines dynamic placeholder resolution + ref resolution.
+// NOTE: Dynamic placeholders are resolved only in the initial/top-level content passed
+// to this function. Any {{ref:...}} tokens found in files loaded during recursive
+// resolution are processed by resolveRefs without a RefContext, so placeholders inside
+// those nested refs are treated literally.
 func resolveRefsWithContext(content []byte, configDir string, visited map[string]bool, ctx *RefContext) ([]byte, error) {
-	// Step 1: Resolve dynamic placeholders in ref tokens
+	// Step 1: Resolve dynamic placeholders in ref tokens in the initial content
 	content, err := resolveDynamicInRefs(content, ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 2: Resolve the refs themselves
+	// Step 2: Resolve the refs themselves (including any nested refs)
 	return resolveRefs(content, configDir, visited)
 }
 
 // resolveDynamicInRefs resolves {.field}, {path.x}, {query.x}, {header.x} placeholders
-// inside {{ref:...}} tokens
+// inside {{ref:...}} tokens in a single blob of content. It is intended to be called
+// on the top-level content before recursive ref resolution begins.
 func resolveDynamicInRefs(content []byte, ctx *RefContext) ([]byte, error) {
-	if ctx == nil {
-		return content, nil
-	}
-
 	// Find all {{ref:...}} tokens
 	matches := refPattern.FindAllSubmatchIndex(content, -1)
 	if len(matches) == 0 {
+		return content, nil
+	}
+
+	// Check if any ref tokens contain placeholders
+	if ctx == nil {
+		for _, match := range matches {
+			refToken := string(content[match[2]:match[3]])
+			placeholders := dynamicPlaceholderPattern.FindAllStringSubmatch(refToken, -1)
+			if len(placeholders) > 0 {
+				return nil, fmt.Errorf("dynamic placeholders found in ref token %q but no request context available", refToken)
+			}
+		}
 		return content, nil
 	}
 
@@ -106,7 +140,8 @@ func resolveDynamicInRefs(content []byte, ctx *RefContext) ([]byte, error) {
 	return result, nil
 }
 
-// resolvePlaceholders resolves all {placeholder} patterns in a ref token
+// resolvePlaceholders resolves all {placeholder} patterns in a ref token.
+// The caller must ensure ctx is not nil.
 func resolvePlaceholders(token string, ctx *RefContext) (string, error) {
 	result := token
 
@@ -122,10 +157,26 @@ func resolvePlaceholders(token string, ctx *RefContext) (string, error) {
 			return "", fmt.Errorf("cannot resolve %s: %w", placeholder, err)
 		}
 
-		result = strings.Replace(result, placeholder, value, 1)
+		// Sanitize the value to prevent injection of ref query parameters
+		safeValue, err := sanitizeRefPlaceholderValue(value)
+		if err != nil {
+			return "", fmt.Errorf("invalid value for %s: %w", placeholder, err)
+		}
+
+		result = strings.Replace(result, placeholder, safeValue, 1)
 	}
 
 	return result, nil
+}
+
+// sanitizeRefPlaceholderValue ensures that a placeholder value cannot inject or
+// override ref query parameters by containing reserved characters such as
+// '?', '&', or '='. Such values are rejected.
+func sanitizeRefPlaceholderValue(value string) (string, error) {
+	if strings.ContainsAny(value, "?&=") {
+		return "", fmt.Errorf("placeholder value contains reserved characters (?&=)")
+	}
+	return value, nil
 }
 
 // resolveValue resolves a single placeholder key to its value

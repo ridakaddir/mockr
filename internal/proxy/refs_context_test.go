@@ -49,6 +49,40 @@ func TestNewRefContext(t *testing.T) {
 	}
 }
 
+func TestNewRefContext_HeaderSanitization(t *testing.T) {
+	// Create request with both safe and sensitive headers
+	req, err := http.NewRequest("POST", "/test", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+	req.Header.Set("X-Tenant-Id", "safe-header")
+	req.Header.Set("Authorization", "Bearer secret-token")
+	req.Header.Set("Cookie", "session=secret-session")
+	req.Header.Set("Proxy-Authorization", "Basic secret-proxy")
+	req.Header.Set("User-Agent", "mockr-test")
+
+	ctx := NewRefContext(req, []byte(`{}`), nil)
+
+	// Safe headers should be preserved
+	if ctx.Headers.Get("X-Tenant-Id") != "safe-header" {
+		t.Errorf("expected X-Tenant-Id=safe-header, got %v", ctx.Headers.Get("X-Tenant-Id"))
+	}
+	if ctx.Headers.Get("User-Agent") != "mockr-test" {
+		t.Errorf("expected User-Agent=mockr-test, got %v", ctx.Headers.Get("User-Agent"))
+	}
+
+	// Sensitive headers should be stripped
+	if ctx.Headers.Get("Authorization") != "" {
+		t.Errorf("expected Authorization to be stripped, got %v", ctx.Headers.Get("Authorization"))
+	}
+	if ctx.Headers.Get("Cookie") != "" {
+		t.Errorf("expected Cookie to be stripped, got %v", ctx.Headers.Get("Cookie"))
+	}
+	if ctx.Headers.Get("Proxy-Authorization") != "" {
+		t.Errorf("expected Proxy-Authorization to be stripped, got %v", ctx.Headers.Get("Proxy-Authorization"))
+	}
+}
+
 func TestResolveDynamicInRefs_BodyField(t *testing.T) {
 	req, _ := http.NewRequest("POST", "/test", strings.NewReader(`{"endpointId":"prod"}`))
 	ctx := NewRefContext(req, []byte(`{"endpointId":"prod"}`), nil)
@@ -156,6 +190,43 @@ func TestResolveDynamicInRefs_EmptyValue_Error(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "resolved to empty string") {
 		t.Errorf("error should mention empty string, got: %v", err)
+	}
+}
+
+func TestResolveDynamicInRefs_InvalidChars_Error(t *testing.T) {
+	req, _ := http.NewRequest("POST", "/test", strings.NewReader(`{"endpointId":"prod?filter=status:active"}`))
+	ctx := NewRefContext(req, []byte(`{"endpointId":"prod?filter=status:active"}`), nil)
+
+	content := []byte(`{"data": "{{ref:stubs/{.endpointId}/models/}}"}`)
+	_, err := resolveDynamicInRefs(content, ctx)
+	if err == nil {
+		t.Fatalf("expected error for value with reserved characters")
+	}
+	if !strings.Contains(err.Error(), "reserved characters") {
+		t.Errorf("error should mention reserved characters, got: %v", err)
+	}
+}
+
+func TestResolveDynamicInRefs_NilContext_Error(t *testing.T) {
+	content := []byte(`{"data": "{{ref:stubs/{.endpointId}/models/}}"}`)
+	_, err := resolveDynamicInRefs(content, nil)
+	if err == nil {
+		t.Fatalf("expected error for nil context with placeholders")
+	}
+	if !strings.Contains(err.Error(), "no request context available") {
+		t.Errorf("error should mention no request context, got: %v", err)
+	}
+}
+
+func TestResolveDynamicInRefs_NilContext_NoPlaceholders_Success(t *testing.T) {
+	content := []byte(`{"data": "{{ref:stubs/prod/models/}}"}`)
+	result, err := resolveDynamicInRefs(content, nil)
+	if err != nil {
+		t.Fatalf("unexpected error for nil context without placeholders: %v", err)
+	}
+	expected := `{"data": "{{ref:stubs/prod/models/}}"}`
+	if string(result) != expected {
+		t.Errorf("expected %s, got %s", expected, string(result))
 	}
 }
 

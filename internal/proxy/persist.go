@@ -36,7 +36,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 		incoming, err = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams, make(map[string]bool))
 		if err != nil {
 			logger.Error("loading defaults", "err", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load defaults"})
 			return true, ""
 		}
 		updated, err := persist.Update(filePath, incoming)
@@ -67,7 +67,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 		incoming, err = loadDefaults(c.Defaults, incoming, r, bodyBytes, configDir, routePattern, pathParams, make(map[string]bool))
 		if err != nil {
 			logger.Error("loading defaults", "err", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to apply defaults"})
 			return true, ""
 		}
 
