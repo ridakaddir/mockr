@@ -24,6 +24,13 @@ examples/
 │   ├── orders.toml           # POST /api/orders — nested dot-notation body fields
 │   └── stubs/
 │
+├── cross-refs/               # Cross-endpoint references with {{ref:...}} syntax
+│   ├── mockr.toml            # Routes with {{ref:...}} tokens
+│   └── stubs/
+│       ├── models/           # Model data files
+│       ├── endpoints/        # Endpoint files referencing models
+│       └── templates/        # Go templates for data transformation
+│
 ├── directory-stubs/          # Directory-based CRUD (one file per resource)
 │   ├── mockr.toml            # Full CRUD with directory aggregation + auto-ID
 │   └── stubs/users/          # One JSON file per user
@@ -146,6 +153,50 @@ Reset: `git checkout examples/directory-stubs/stubs/users/`
 
 ---
 
+## cross-refs
+
+Cross-endpoint references with the `{{ref:...}}` syntax. Endpoints can reference data from other stub files with optional filtering and template transformation for field renaming.
+
+```sh
+mockr --config examples/cross-refs
+```
+
+```sh
+# Get all models (basic directory reference)
+http :4000/models
+# Returns: [{"id":"model-1","modelName":"GPT-4",...}, ...]
+
+# Get production endpoint (filter + template transformation)
+http :4000/endpoints/prod
+# Returns: {"deployedModels": [{"modelId":"model-1","name":"GPT-4","modelVersion":"1.0"}]}
+
+# Get development endpoint (shows multiple reference types)
+http :4000/endpoints/dev
+# Returns: {"allModels":[...], "activeModelsOnly":[...]}
+
+# Get staging endpoint (single file + provider filtering)  
+http :4000/endpoints/staging
+# Returns: {"primaryModel":{...}, "backupModels":[...]}
+
+# Create new endpoint (inline JSON with references)
+http POST :4000/endpoints
+# Returns: {"availableModels": [active models only]}
+```
+
+**Key features demonstrated:**
+
+- **Directory references**: `{{ref:stubs/models/}}` → all models
+- **Single file references**: `{{ref:stubs/models/1.json}}` → specific model
+- **Filtering**: `{{ref:stubs/models/?filter=status:active}}` → only active models
+- **Provider filtering**: `{{ref:stubs/models/?filter=provider:Anthropic}}` → Anthropic models only
+- **Template transformation**: Field renaming from `{id, modelName, version}` to `{modelId, name, modelVersion}`
+- **Combined filter + template**: Active models with transformed field names
+- **Inline JSON support**: References work in config `json = '...'` blocks
+
+**Benefits**: Build interconnected APIs where endpoints dynamically reference each other's data. Changes to model data automatically appear in all referencing endpoints.
+
+---
+
 ## dynamic-files
 
 File paths contain `{source.field}` placeholders resolved from the request at runtime.
@@ -175,7 +226,78 @@ http ':4000/api/orders?username=charlie'
 
 ---
 
+## transitions
 
+Two modes for simulating state changes over time.
+
+```sh
+mockr --config examples/transitions
+```
+
+### Request-time transitions (orders)
+
+Each GET evaluates elapsed time since the first request and serves the matching case. The response changes as time passes.
+
+```sh
+http :4000/orders/o123    # t=0s  → shipped
+# wait 30 seconds
+http :4000/orders/o123    # t=30s → out_for_delivery  
+# wait 60 more seconds
+http :4000/orders/o123    # t=90s → delivered (stays here)
+```
+
+**Watch it change automatically:**
+
+```sh
+watch -n 5 'http :4000/orders/o123'
+```
+
+### Background transitions (deployments)
+
+POST creates a resource, and mockr **mutates the file on disk** in the background after a delay. All reads (GET by ID, list) see the updated state.
+
+```sh
+# 1. Create a deployment
+http POST :4000/deployments/ep-demo \
+  deploymentId=dep-001 name="my-app"
+
+# 2. GET immediately → "Deploying"
+http :4000/deployments/ep-demo/dep-001
+
+# 3. Wait 15+ seconds, GET again → "Ready"
+sleep 16 && http :4000/deployments/ep-demo/dep-001
+
+# 4. List all — also shows "Ready"
+http :4000/deployments/ep-demo
+```
+
+---
+
+## record-mode
+
+Proxy a real API and automatically record responses as stub files. Each new path is recorded once — subsequent requests to the same path are served from the stub (`via=stub`).
+
+```sh
+mockr --config examples/record-mode \
+      --target https://jsonplaceholder.typicode.com \
+      --api-prefix /api \
+      --record
+```
+
+```sh
+http :4000/api/posts
+http :4000/api/posts/1
+http :4000/api/users
+http :4000/api/users/1
+```
+
+After recording, serve fully offline (no `--target`, no `--record`):
+
+```sh
+mockr --config examples/record-mode --api-prefix /api
+```
+
+---
 
 ## openapi-generate
 
