@@ -78,14 +78,14 @@ func NewRefContext(r *http.Request, bodyBytes []byte, pathParams map[string]stri
 // resolution are processed by resolveRefs without a RefContext, so placeholders inside
 // those nested refs are treated literally.
 func resolveRefsWithContext(content []byte, configDir string, visited map[string]bool, ctx *RefContext) ([]byte, error) {
-	// Step 1: Resolve $each and $template references first (they need to process before spread)
-	content, err := resolveEachAndTemplateRefs(content, configDir, visited, ctx)
+	// Step 1: Resolve spread references first (they need to operate on the original JSON structure)
+	content, err := resolveSpreadRefs(content, configDir, visited, ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 2: Resolve spread references (they need to operate on the original JSON structure)
-	content, err = resolveSpreadRefs(content, configDir, visited, ctx)
+	// Step 2: Resolve $each and $template references (they need to process after spread)
+	content, err = resolveEachAndTemplateRefs(content, configDir, visited, ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -715,6 +715,25 @@ func processSpreadFields(data interface{}, configDir string, visited map[string]
 			// Create new object with spread properties first, then existing properties
 			newObj := make(map[string]interface{})
 
+			// Check if this is a placeholder for $each processing
+			if _, isPlaceholder := spreadMap["__EACH_PLACEHOLDER__"]; isPlaceholder {
+				// This $spread is meant for $each processing - preserve it
+				newObj = make(map[string]interface{})
+				for key, value := range v {
+					// Recursively process nested structures but keep $spread as-is
+					if key == "$spread" {
+						newObj[key] = value // Keep the original $spread value
+						continue
+					}
+					processed, err := processSpreadFields(value, configDir, visited, refCtx)
+					if err != nil {
+						return nil, err
+					}
+					newObj[key] = processed
+				}
+				return newObj, nil
+			}
+
 			// Add spread properties first
 			for key, value := range spreadMap {
 				newObj[key] = value
@@ -768,6 +787,12 @@ func processSpreadFields(data interface{}, configDir string, visited map[string]
 
 // processSpreadRef resolves a single spread reference and returns the object to be spread
 func processSpreadRef(refToken string, configDir string, visited map[string]bool, refCtx *RefContext) (map[string]interface{}, error) {
+	// Special case: {{.}} tokens are handled by $each processing, not $spread processing
+	if refToken == "{{.}}" {
+		// Return a marker that indicates this should be processed later by $each
+		return map[string]interface{}{"__EACH_PLACEHOLDER__": true}, nil
+	}
+
 	// Check if this is a {{ref:...}} token and extract the path
 	if !strings.HasPrefix(refToken, "{{ref:") || !strings.HasSuffix(refToken, "}}") {
 		return nil, fmt.Errorf("$spread value must be a {{ref:...}} token, got %q", refToken)
