@@ -64,8 +64,29 @@ func serveMock(w http.ResponseWriter, r *http.Request, c config.Case, bodyBytes 
 			return
 		}
 
+		// Resolve cross-references in file content
+		body, err = resolveRefs(body, configDir, make(map[string]bool))
+		if err != nil {
+			logger.Error("resolving refs", "file", filePath, "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "ref resolution error",
+			})
+			return
+		}
+
 	case c.JSON != "":
-		rendered, err := renderTemplate(c.JSON)
+		// Resolve cross-references first
+		resolved, err := resolveRefs([]byte(c.JSON), configDir, make(map[string]bool))
+		if err != nil {
+			logger.Error("resolving refs in inline json", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "ref resolution error",
+			})
+			return
+		}
+
+		// Then render existing template tokens (uuid, now, timestamp)
+		rendered, err := renderTemplate(string(resolved))
 		if err != nil {
 			logger.Error("rendering json template", "err", err)
 			http.Error(w, `{"error":"template render error"}`, http.StatusInternalServerError)

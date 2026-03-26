@@ -1,0 +1,8 @@
+{
+  "id": "model-3",
+  "modelName": "Legacy-Model",
+  "version": "0.1",
+  "status": "deprecated",
+  "provider": "Internal",
+  "capabilities": ["text-generation"]
+}
