@@ -129,7 +129,7 @@ func (s *transitionScheduler) schedule(delay time.Duration, filePath string, c c
 				logger.Error("deferred transition: loading defaults failed", "err", err)
 				return
 			}
-			if incoming == nil || len(incoming) == 0 {
+			if len(incoming) == 0 {
 				logger.Warn("deferred transition: no defaults to apply",
 					"file", filePath, "defaults", c.Defaults)
 				return
