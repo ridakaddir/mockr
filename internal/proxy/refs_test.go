@@ -472,3 +472,45 @@ func TestParseRefToken_InvalidFilter(t *testing.T) {
 		t.Errorf("error should mention invalid filter format, got: %v", err)
 	}
 }
+
+func TestResolveRefs_EmptyContent(t *testing.T) {
+	// Test empty content
+	result, err := resolveRefs([]byte(""), "", make(map[string]bool))
+	if err != nil {
+		t.Fatalf("unexpected error for empty content: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty result for empty content")
+	}
+
+	// Test whitespace-only content
+	result, err = resolveRefs([]byte("   \n  \t  "), "", make(map[string]bool))
+	if err != nil {
+		t.Fatalf("unexpected error for whitespace-only content: %v", err)
+	}
+	if string(result) != "   \n  \t  " {
+		t.Errorf("expected whitespace content to be preserved")
+	}
+}
+
+func TestResolveRefs_InvalidJSONAfterResolution(t *testing.T) {
+	// This test ensures that if ref resolution produces invalid JSON,
+	// we get a proper error rather than a panic or malformed output.
+	tempDir := t.TempDir()
+
+	// Create a file that when referenced will break JSON structure
+	badFile := filepath.Join(tempDir, "bad.json")
+	if err := os.WriteFile(badFile, []byte(`{"unclosed": "quote`), 0644); err != nil {
+		t.Fatalf("writing bad JSON file: %v", err)
+	}
+
+	// Try to resolve a ref to the bad file
+	content := []byte(`{"data": "{{ref:bad.json}}"}`)
+	_, err := resolveRefs(content, tempDir, make(map[string]bool))
+	if err == nil {
+		t.Fatalf("expected error when referencing file with invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "bad.json") {
+		t.Errorf("error should mention the problematic file, got: %v", err)
+	}
+}

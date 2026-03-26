@@ -20,6 +20,11 @@ var refPattern = regexp.MustCompile(`"{{ref:([^}]+)}}"`)
 // resolveRefs processes all {{ref:...}} tokens in JSON content.
 // visited tracks paths to detect circular references.
 func resolveRefs(content []byte, configDir string, visited map[string]bool) ([]byte, error) {
+	// Skip processing if content is empty or whitespace-only
+	if len(content) == 0 || len(strings.TrimSpace(string(content))) == 0 {
+		return content, nil
+	}
+
 	// Find all ref tokens
 	matches := refPattern.FindAllSubmatchIndex(content, -1)
 	if len(matches) == 0 {
@@ -46,6 +51,12 @@ func resolveRefs(content []byte, configDir string, visited map[string]bool) ([]b
 
 		// Replace the token (including quotes) with the JSON value
 		result = append(result[:match[0]], append(jsonBytes, result[match[1]:]...)...)
+	}
+
+	// Validate that the result is still valid JSON after replacements
+	var validation interface{}
+	if err := json.Unmarshal(result, &validation); err != nil {
+		return nil, fmt.Errorf("invalid JSON after ref resolution: %w", err)
 	}
 
 	return result, nil
