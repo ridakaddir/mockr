@@ -12,10 +12,11 @@ When `persist: true`, mutating requests operate on individual JSON files stored 
 
 ```
 stubs/
-└── users/
-    ├── 1.json     # {"userId": "1", "name": "Alice", ...}
-    ├── 2.json     # {"userId": "2", "name": "Bob", ...}
-    └── 3.json     # {"userId": "3", "name": "Charlie", ...}
+└── countries/
+    ├── morocco.json     # {"code": "morocco", "name": "Morocco", "continent": "africa", ...}
+    ├── germany.json     # {"code": "germany", "name": "Germany", "continent": "europe", ...}
+    ├── japan.json       # {"code": "japan", "name": "Japan", "continent": "asia", ...}
+    └── canada.json      # {"code": "canada", "name": "Canada", "continent": "north-america", ...}
 ```
 
 ### API operations
@@ -37,16 +38,16 @@ stubs/
 ```toml
 [[routes]]
 method   = "POST"
-match    = "/api/users"
+match    = "/api/countries"
 enabled  = true
 fallback = "created"
 
   [routes.cases.created]
   status  = 201
-  file    = "stubs/users/"       # Directory path (trailing /)
+  file    = "stubs/countries/"       # Directory path (trailing /)
   persist = true
   merge   = "append"
-  key     = "userId"             # Field used as filename
+  key     = "code"                   # Field used as filename
 ```
 
 ### Read — list (directory aggregation)
@@ -54,12 +55,12 @@ fallback = "created"
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/api/users"
+match    = "/api/countries"
 enabled  = true
 fallback = "list"
 
   [routes.cases.list]
-  file = "stubs/users/"          # Returns array of all .json files
+  file = "stubs/countries/"          # Returns array of all .json files
 ```
 
 ### Read — single file
@@ -67,12 +68,12 @@ fallback = "list"
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/api/users/{userId}"
+match    = "/api/countries/{countryId}"
 enabled  = true
-fallback = "user"
+fallback = "country"
 
-  [routes.cases.user]
-  file = "stubs/users/{path.userId}.json"    # Dynamic filename from path
+  [routes.cases.country]
+  file = "stubs/countries/{path.countryId}.json"    # Dynamic filename from path
 ```
 
 ### Update — `update`
@@ -80,12 +81,12 @@ fallback = "user"
 ```toml
 [[routes]]
 method   = "PATCH"
-match    = "/api/users/{userId}"
+match    = "/api/countries/{countryId}"
 enabled  = true
 fallback = "updated"
 
   [routes.cases.updated]
-  file    = "stubs/users/{path.userId}.json"
+  file    = "stubs/countries/{path.countryId}.json"
   persist = true
   merge   = "update"             # Shallow merge into existing file
 ```
@@ -95,13 +96,13 @@ fallback = "updated"
 ```toml
 [[routes]]
 method   = "DELETE"
-match    = "/api/users/{userId}"
+match    = "/api/countries/{countryId}"
 enabled  = true
 fallback = "deleted"
 
   [routes.cases.deleted]
   status  = 204
-  file    = "stubs/users/{path.userId}.json"
+  file    = "stubs/countries/{path.countryId}.json"
   persist = true
   merge   = "delete"             # Remove file from disk
 ```
@@ -124,8 +125,8 @@ When `merge = "append"`, the `key` field determines the filename. mockr resolves
 ### Example: key from the request body
 
 ```sh
-curl -X POST localhost:4000/api/users -d '{"userId": "alice", "name": "Alice"}'
-# Creates file: stubs/users/alice.json
+curl -X POST localhost:4000/api/countries -d '{"code": "morocco", "name": "Morocco"}'
+# Creates file: stubs/countries/morocco.json
 ```
 
 ### Example: key from a named path parameter
@@ -133,31 +134,31 @@ curl -X POST localhost:4000/api/users -d '{"userId": "alice", "name": "Alice"}'
 ```toml
 [[routes]]
 method   = "POST"
-match    = "/api/endpoints/{endpointId}/publication"
-fallback = "published"
+match    = "/api/continents/{continentId}/countries"
+fallback = "created"
 
-  [routes.cases.published]
+  [routes.cases.created]
   status  = 201
-  file    = "stubs/publications/"
+  file    = "stubs/countries/"
   persist = true
   merge   = "append"
-  key     = "endpointId"
+  key     = "continentId"
 ```
 
 ```sh
-curl -X POST localhost:4000/api/endpoints/ep-42/publication -d '{"subDomain": "gemma"}'
-# Creates file: stubs/publications/ep-42.json
-# The endpointId is extracted from the URL and injected into the saved record
+curl -X POST localhost:4000/api/continents/africa/countries -d '{"name": "Tunisia"}'
+# Creates file: stubs/countries/africa.json
+# The continentId is extracted from the URL and injected into the saved record
 ```
 
 ### Example: auto-generated UUID fallback
 
 ```sh
-# POST without userId and no matching path parameter
-curl -X POST localhost:4000/api/users -d '{"name": "New User"}'
+# POST without code and no matching path parameter
+curl -X POST localhost:4000/api/countries -d '{"name": "New Country"}'
 
-# Creates file: stubs/users/123e4567-e89b-12d3-a456-426614174000.json
-# Response: {"userId": "123e4567-...", "name": "New User"}
+# Creates file: stubs/countries/123e4567-e89b-12d3-a456-426614174000.json
+# Response: {"code": "123e4567-...", "name": "New Country"}
 ```
 
 ---
@@ -166,13 +167,13 @@ curl -X POST localhost:4000/api/users -d '{"name": "New User"}'
 
 When a `POST` creates a resource, the client typically sends only a subset of fields. The `defaults` field lets you enrich the response with server-generated values.
 
-**Defaults file** (`stubs/defaults/user.json`):
+**Defaults file** (`stubs/defaults/country.json`):
 
 ```json
 {
-  "userId": "{{uuid}}",
-  "role": "user",
-  "active": true,
+  "code": "{{uuid}}",
+  "status": "active",
+  "verified": false,
   "createdAt": "{{now}}"
 }
 ```
@@ -182,11 +183,11 @@ When a `POST` creates a resource, the client typically sends only a subset of fi
 ```toml
 [routes.cases.created]
 status   = 201
-file     = "stubs/users/"
+file     = "stubs/countries/"
 persist  = true
 merge    = "append"
-key      = "userId"
-defaults = "stubs/defaults/user.json"
+key      = "code"
+defaults = "stubs/defaults/country.json"
 ```
 
 **How it works:**
@@ -196,17 +197,17 @@ defaults = "stubs/defaults/user.json"
 3. The merged result is saved to disk and returned as the response
 
 ```sh
-# POST with just name and email
-curl -X POST localhost:4000/api/users -d '{"name": "Alice", "email": "alice@example.com"}'
+# POST with just name and continent
+curl -X POST localhost:4000/api/countries -d '{"name": "Morocco", "continent": "africa"}'
 
 # Response (and saved file) includes defaults:
 # {
-#   "userId": "a1b2c3d4-...",
-#   "name": "Alice",
-#   "email": "alice@example.com",
-#   "role": "user",
-#   "active": true,
-#   "createdAt": "2026-03-24T10:30:00Z"
+#   "code": "a1b2c3d4-...",
+#   "name": "Morocco",
+#   "continent": "africa",
+#   "status": "active",
+#   "verified": false,
+#   "createdAt": "2026-03-26T10:30:00Z"
 # }
 ```
 
@@ -214,16 +215,16 @@ curl -X POST localhost:4000/api/users -d '{"name": "Alice", "email": "alice@exam
 
 ```toml
 [routes.cases.updated]
-file     = "stubs/users/{path.userId}.json"
+file     = "stubs/countries/{path.countryId}.json"
 persist  = true
 merge    = "update"
-defaults = "stubs/defaults/user-update.json"
+defaults = "stubs/defaults/country-update.json"
 ```
 
 **Dynamic defaults path:**
 
 ```toml
-defaults = "stubs/defaults/{path.resourceType}.json"
+defaults = "stubs/defaults/{path.continent}.json"
 ```
 
 **Error handling:** If the defaults file is missing or contains invalid JSON, mockr logs a warning and proceeds with the original request body.
@@ -236,26 +237,26 @@ Support sub-resources with nested directories:
 
 ```
 stubs/
-├── deployments/
-│   ├── endpoint-123/
-│   │   ├── deploy-1.json
-│   │   └── deploy-2.json
-│   └── endpoint-456/
-│       └── deploy-3.json
+├── continents/
+│   ├── africa/
+│   │   ├── morocco.json
+│   │   └── tunisia.json
+│   └── europe/
+│       └── germany.json
 ```
 
 ```toml
-# GET /endpoints/{endpointId}/deployments — list
-[routes.cases.list_deployments]
-file = "stubs/deployments/{path.endpointId}/"
+# GET /continents/{continentId}/countries — list
+[routes.cases.list_countries]
+file = "stubs/continents/{path.continentId}/"
 
-# POST /endpoints/{endpointId}/deployments — create
-[routes.cases.create_deployment]
-file     = "stubs/deployments/{path.endpointId}/"
+# POST /continents/{continentId}/countries — create
+[routes.cases.create_country]
+file     = "stubs/continents/{path.continentId}/"
 persist  = true
 merge    = "append"
-key      = "deploymentId"
-defaults = "stubs/defaults/deployment.json"
+key      = "code"
+defaults = "stubs/defaults/country.json"
 ```
 
 ---
@@ -272,7 +273,7 @@ defaults = "stubs/defaults/deployment.json"
 
 ## Example
 
-See [`examples/directory-stubs/`](../../examples/directory-stubs/) for a complete working example with user listing, creation, retrieval, updates, and deletion.
+See [`examples/directory-stubs/`](../../examples/directory-stubs/) for a complete working example with country listing, creation, retrieval, updates, and deletion.
 
 ---
 

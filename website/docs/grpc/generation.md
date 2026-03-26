@@ -9,28 +9,28 @@ Scaffold a complete `[[grpc_routes]]` config and synthetic stub files from a `.p
 ## Usage
 
 ```sh
-mockr generate --proto service.proto --out ./mocks
+mockr generate --proto geo.proto --out ./mocks
 
 # Multiple proto files
-mockr generate --proto users.proto --proto orders.proto --out ./mocks
+mockr generate --proto countries.proto --proto cities.proto --out ./mocks
 
 # With extra import paths for proto imports
-mockr generate --proto service.proto --import-path ./vendor/protos --format yaml
+mockr generate --proto geo.proto --import-path ./vendor/protos --format yaml
 ```
 
 ---
 
 ## Generated output
 
-For a `UserService` with three methods:
+For a `CountryService` with three methods:
 
 ```
 mocks/
 ├── mockr.toml            # [[grpc_routes]] for all methods
 └── stubs/
-    ├── UserService_GetUser.json
-    ├── UserService_ListUsers.json
-    └── UserService_CreateUser.json
+    ├── CountryService_GetCountry.json
+    ├── CountryService_ListCountries.json
+    └── CountryService_CreateCountry.json
 ```
 
 ---
@@ -41,10 +41,10 @@ Stubs are synthesised from the output message descriptor — field names, types,
 
 | Field name pattern | Synthesised value |
 |---|---|
-| contains `id` | `"{<!-- -->{uuid}<!-- -->"` |
+| contains `id` | `"{{uuid}}"` |
 | contains `email` | `"user@example.com"` |
 | contains `url` / `uri` | `"https://example.com"` |
-| contains `time` / `at` / `date` | `"{<!-- -->{now}<!-- -->"` |
+| contains `time` / `at` / `date` | `"{{now}}"` |
 | contains `name` | `"Example Name"` |
 | `bool` type | `true` |
 | `int32` / `int64` etc. | `1` |
@@ -68,7 +68,7 @@ Stubs are synthesised from the output message descriptor — field names, types,
 After generating, start the server:
 
 ```sh
-mockr --config ./mocks --grpc-proto service.proto
+mockr --config ./mocks --grpc-proto geo.proto
 ```
 
 ---

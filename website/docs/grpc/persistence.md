@@ -9,59 +9,59 @@ gRPC routes support the same directory-based persistence as HTTP routes. Each re
 ## Full CRUD example
 
 ```toml
-# Create item — append to directory
+# Create country — append to directory
 [[grpc_routes]]
-match    = "/items.ItemService/CreateItem"
+match    = "/geo.CountryService/CreateCountry"
 enabled  = true
 fallback = "created"
 
   [grpc_routes.cases.created]
   status   = 0
-  file     = "stubs/items/"               # Directory path
+  file     = "stubs/countries/"               # Directory path
   persist  = true
   merge    = "append"
-  key      = "itemId"                      # Field used as filename; auto-generated if missing
-  defaults = "stubs/defaults/item.json"    # Server-generated fields ({<!-- -->{uuid}<!-- -->, {<!-- -->{now}<!-- -->)
+  key      = "countryCode"                    # Field used as filename; auto-generated if missing
+  defaults = "stubs/defaults/country.json"    # Server-generated fields ({{uuid}}, {{now}})
 
-# List items — directory aggregation
+# List countries — directory aggregation
 [[grpc_routes]]
-match    = "/items.ItemService/ListItems"
+match    = "/geo.CountryService/ListCountries"
 enabled  = true
 fallback = "list"
 
   [grpc_routes.cases.list]
-  file = "stubs/items/"                    # Returns array of all .json files
+  file = "stubs/countries/"                   # Returns array of all .json files
 
-# Get item — single file read
+# Get country — single file read
 [[grpc_routes]]
-match    = "/items.ItemService/GetItem"
+match    = "/geo.CountryService/GetCountry"
 enabled  = true
-fallback = "item"
+fallback = "country"
 
-  [grpc_routes.cases.item]
-  file = "stubs/items/{body.itemId}.json"  # Dynamic filename from request
+  [grpc_routes.cases.country]
+  file = "stubs/countries/{body.countryCode}.json"  # Dynamic filename from request
 
-# Update item — shallow merge into existing file
+# Update country — shallow merge into existing file
 [[grpc_routes]]
-match    = "/items.ItemService/UpdateItem"
+match    = "/geo.CountryService/UpdateCountry"
 enabled  = true
 fallback = "updated"
 
   [grpc_routes.cases.updated]
   status  = 0
-  file    = "stubs/items/{body.itemId}.json"
+  file    = "stubs/countries/{body.countryCode}.json"
   persist = true
   merge   = "update"
 
-# Delete item — remove file
+# Delete country — remove file
 [[grpc_routes]]
-match    = "/items.ItemService/DeleteItem"
+match    = "/geo.CountryService/DeleteCountry"
 enabled  = true
 fallback = "deleted"
 
   [grpc_routes.cases.deleted]
   status  = 0
-  file    = "stubs/items/{body.itemId}.json"
+  file    = "stubs/countries/{body.countryCode}.json"
   persist = true
   merge   = "delete"
 ```
@@ -70,7 +70,7 @@ fallback = "deleted"
 
 ## Field name mapping
 
-Both snake_case (`item_id`) and camelCase (`itemId`) field names in protobuf requests are matched against `key` automatically.
+Both snake_case (`country_code`) and camelCase (`countryCode`) field names in protobuf requests are matched against `key` automatically.
 
 ---
 
@@ -86,7 +86,7 @@ Both snake_case (`item_id`) and camelCase (`itemId`) field names in protobuf req
 
 ## Response body
 
-All persist operations return an empty proto response (`` `{}` ``). The gRPC status code signals success or failure.
+All persist operations return an empty proto response (`{}`). The gRPC status code signals success or failure.
 
 ---
 

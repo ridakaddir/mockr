@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://ridakaddir.github.io/mockr"><strong>📖 Documentation Site</strong></a> | <a href="docs/README.md"><strong>Markdown Docs</strong></a>
+  <a href="https://ridakaddir.github.io/mockr"><strong>Documentation Site</strong></a> | <a href="docs/README.md"><strong>Markdown Docs</strong></a>
 </p>
 
 ---
@@ -33,7 +33,9 @@
 
 - **Route-based mocking** — define routes with named response cases and condition routing
 - **Cross-endpoint references** — `{{ref:...}}` syntax to reference data from other stub files with filtering and transformation
-- **Dynamic refs in defaults** — `{{ref:stubs/{.endpointId}/models/}}` with request data placeholders for environment/tenant-specific defaults
+- **Array processing** — `$each` / `$template` syntax to iterate over collections and reshape each item
+- **Object spreading** — `$spread` syntax to merge referenced object properties into the containing object
+- **Dynamic refs in defaults** — `{{ref:stubs/{.field}/data/}}` with request data placeholders for environment-specific defaults
 - **gRPC mock & proxy** — mock unary gRPC methods from `.proto` files; no `protoc` or codegen required
 - **Named path parameters** — `{name}` syntax for path extraction, dynamic files, and persistence
 - **Directory-based stubs** — CRUD operations with one JSON file per resource
@@ -41,7 +43,7 @@
 - **Hot reload** — edit config files and see changes on the next request
 - **Record mode** — proxy a real API, save responses as stubs, replay offline
 - **OpenAPI generation** — generate a complete mock from any OpenAPI 3 spec
-- **Response transitions** — time-based state progression (e.g. `shipped` → `delivered`)
+- **Response transitions** — time-based state progression (e.g. `pending` → `approved`)
 - **Multi-format config** — TOML, YAML, or JSON — auto-detected by file extension
 
 ---
@@ -80,6 +82,106 @@ mockr --config ./mocks --grpc-proto service.proto
 ```
 
 See the [quick start guide](docs/quick-start.md) for more details.
+
+---
+
+## How It Works
+
+All examples in this documentation use a **geographic data API** (continents, countries, cities) to demonstrate every feature progressively.
+
+### 1. Define your stubs
+
+```
+mocks/
+├── continents/
+│   ├── africa.json
+│   └── europe.json
+├── countries/
+│   ├── morocco.json
+│   └── germany.json
+├── cities/
+│   ├── casablanca.json
+│   └── berlin.json
+└── templates/
+    └── city-summary.json
+```
+
+**`countries/morocco.json`:**
+```json
+{
+  "name": "Morocco",
+  "continent": "Africa",
+  "capital": "Rabat",
+  "population": 37000000,
+  "languages": ["Arabic", "Berber", "French"]
+}
+```
+
+### 2. Write a config
+
+```toml
+[[routes]]
+method   = "GET"
+match    = "/countries"
+enabled  = true
+fallback = "list"
+
+  [routes.cases.list]
+  status = 200
+  file   = "countries/"
+
+[[routes]]
+method   = "GET"
+match    = "/countries/{countryId}"
+enabled  = true
+fallback = "detail"
+
+  [routes.cases.detail]
+  status = 200
+  file   = "countries/{path.countryId}.json"
+```
+
+### 3. Start mockr
+
+```sh
+mockr --config ./mocks
+```
+
+```
+GET /countries          → [morocco, germany, ...]
+GET /countries/morocco  → {"name": "Morocco", ...}
+```
+
+### 4. Add cross-references
+
+Countries can reference their cities:
+
+```json
+{
+  "name": "Morocco",
+  "continent": "Africa",
+  "capital": "Rabat",
+  "cities": "{{ref:cities/?filter=country:morocco}}"
+}
+```
+
+### 5. Process arrays with `$each` / `$template`
+
+Continents can list their countries with enriched data:
+
+```json
+{
+  "name": "Africa",
+  "countries": {
+    "$each": "{{ref:countries/?filter=continent:africa}}",
+    "$template": {
+      "name": "{{.name}}",
+      "capital": "{{.capital}}",
+      "topCities": "{{ref:cities/?filter=country:{{.code}}&template=templates/city-summary.json}}"
+    }
+  }
+}
+```
 
 ---
 

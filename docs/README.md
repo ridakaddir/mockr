@@ -4,6 +4,8 @@ Welcome to the **mockr** documentation — your complete guide to mocking, stubb
 
 > Looking for the project README? See the [repository root](../README.md).
 
+All examples throughout this documentation use a **geographic data API** (continents, countries, cities) to demonstrate features progressively — from simple CRUD to complex cross-referenced responses.
+
 ---
 
 ## Getting Started
@@ -33,6 +35,7 @@ Welcome to the **mockr** documentation — your complete guide to mocking, stubb
 | [Dynamic File Resolution](features/dynamic-files.md) | `{source.field}` placeholders in file paths |
 | [Template Tokens](features/template-tokens.md) | `{{uuid}}`, `{{now}}`, `{{timestamp}}` in responses |
 | [Cross-Endpoint References](features/cross-endpoint-references.md) | `{{ref:...}}` syntax to reference data from other stub files with filtering and transformation |
+| [Array Processing](features/array-processing.md) | `$each` / `$template` syntax for iterating over collections and reshaping data |
 | [Response Transitions](features/response-transitions.md) | Time-based state progression across response cases |
 | [Record Mode](features/record-mode.md) | Proxy a real API, save responses, replay offline |
 | [Hot Reload](features/hot-reload.md) | Edit config files and see changes on the next request |

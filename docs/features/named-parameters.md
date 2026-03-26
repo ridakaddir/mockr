@@ -13,12 +13,12 @@ Use curly braces to define named parameters that match exactly one path segment:
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/api/users/{userId}"
+match    = "/api/countries/{countryId}"
 enabled  = true
 fallback = "success"
 ```
 
-A request to `GET /api/users/john123` extracts `userId = "john123"`.
+A request to `GET /api/countries/morocco` extracts `countryId = "morocco"`.
 
 ---
 
@@ -28,13 +28,13 @@ Extract several values from a single route:
 
 ```toml
 [[routes]]
-method   = "PUT"
-match    = "/api/users/{userId}/posts/{postId}"
+method   = "GET"
+match    = "/api/continents/{continentId}/countries/{countryId}"
 enabled  = true
-fallback = "update_post"
+fallback = "country_detail"
 ```
 
-`PUT /api/users/42/posts/99` extracts `userId = "42"` and `postId = "99"`.
+`GET /api/continents/africa/countries/morocco` extracts `continentId = "africa"` and `countryId = "morocco"`.
 
 ---
 
@@ -45,7 +45,7 @@ Named parameters can coexist with wildcard `*` patterns:
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/api/v1/*/environments/{envId}/endpoint/{endpointId}"
+match    = "/api/v1/*/regions/{regionId}/countries/{countryId}"
 enabled  = true
 fallback = "success"
 ```
@@ -59,22 +59,22 @@ Use `{path.paramName}` in file paths to serve resource-specific stub files:
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/api/users/{userId}/profile"
+match    = "/api/countries/{countryId}/profile"
 enabled  = true
-fallback = "user_profile"
+fallback = "country_profile"
 
-  [routes.cases.user_profile]
+  [routes.cases.country_profile]
   status = 200
-  file   = "stubs/user-{path.userId}-profile.json"
+  file   = "stubs/countries/{path.countryId}.json"
 ```
 
-**Request:** `GET /api/users/john123/profile`
-**Resolves to:** `stubs/user-john123-profile.json`
+**Request:** `GET /api/countries/morocco/profile`
+**Resolves to:** `stubs/countries/morocco.json`
 
 Nested directory structures work too:
 
 ```toml
-file = "stubs/env-{path.envId}/endpoint-{path.endpointId}.json"
+file = "stubs/continents/{path.continentId}/countries/{path.countryId}.json"
 ```
 
 ---
@@ -86,19 +86,19 @@ Named path parameters work as a fallback for key resolution in `merge = "append"
 ```toml
 [[routes]]
 method   = "POST"
-match    = "/api/v1/*/environments/*/endpoint/{endpointId}/publication"
+match    = "/api/continents/{continentId}/countries/{countryId}/cities"
 enabled  = true
-fallback = "published"
+fallback = "created"
 
-  [routes.cases.published]
+  [routes.cases.created]
   status   = 201
-  file     = "stubs/publications/"
+  file     = "stubs/cities/"
   persist  = true
   merge    = "append"
-  key      = "endpointId"    # resolved from {endpointId} in the URL path
+  key      = "countryId"    # resolved from {countryId} in the URL path
 ```
 
-A `POST` to `/api/v1/org123/environments/env456/endpoint/6053b5e4-cdbf-40c0-a6c8-cb41f29fe6bf/publication` with body `{"subDomain": "gemma"}` creates `stubs/publications/6053b5e4-cdbf-40c0-a6c8-cb41f29fe6bf.json` — the `endpointId` value is extracted from the path and used as both the filename and injected into the saved record.
+A `POST` to `/api/continents/africa/countries/morocco/cities` with body `{"name": "Marrakech"}` creates `stubs/cities/morocco.json` — the `countryId` value is extracted from the path and used as both the filename and injected into the saved record.
 
 ### Key resolution priority
 
@@ -106,12 +106,12 @@ When using `merge = "append"`, the filename is determined by the `key` field val
 
 1. **Request body** — if the body contains the `key` field, that value is used
 2. **Defaults** — if a `defaults` file provides the `key` field (e.g. via `{{uuid}}`), that value is used
-3. **Named path parameters** — `{endpointId}`, `{postId}` from the URL path
+3. **Named path parameters** — `{countryId}`, `{continentId}` from the URL path
 4. **Path wildcards (single `*`)** — for patterns with a single `*`, the first wildcard match may be used as the key; patterns with multiple `*` are not guaranteed to produce a stable filename key
 5. **Query parameters** — URL query parameters
 6. **Auto-generated UUID** — if none of the above provide a value
 
-> **Note:** Defaults are deep-merged into the request body before key resolution runs. If your `defaults` file sets the `key` field (e.g. `"userId": "{{uuid}}"`), that value will be used as the filename even when a named path parameter could provide one. To use path parameter keys with defaults, ensure the defaults file does **not** include the `key` field.
+> **Note:** Defaults are deep-merged into the request body before key resolution runs. If your `defaults` file sets the `key` field (e.g. `"countryId": "{{uuid}}"`), that value will be used as the filename even when a named path parameter could provide one. To use path parameter keys with defaults, ensure the defaults file does **not** include the `key` field.
 
 ---
 
@@ -122,24 +122,24 @@ Use `source = "path"` to match on extracted values:
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/api/users/{userId}/orders"
+match    = "/api/countries/{countryId}/cities"
 enabled  = true
 fallback = "default"
 
   [[routes.conditions]]
   source = "path"
-  field  = "userId"
+  field  = "countryId"
   op     = "eq"
-  value  = "vip-user"
-  case   = "vip_orders"
+  value  = "morocco"
+  case   = "moroccan_cities"
 
-  [routes.cases.vip_orders]
+  [routes.cases.moroccan_cities]
   status = 200
-  file   = "stubs/vip-orders.json"
+  file   = "stubs/moroccan-cities.json"
 
   [routes.cases.default]
   status = 200
-  file   = "stubs/regular-orders.json"
+  file   = "stubs/generic-cities.json"
 ```
 
 ---

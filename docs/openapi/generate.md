@@ -29,7 +29,7 @@ mockr --config ./mocks
 
 For each path + operation in the spec:
 
-- **One config file per tag** (e.g. `users.toml`, `orders.toml`) containing one route per operation
+- **One config file per tag** (e.g. `countries.toml`, `cities.toml`) containing one route per operation
 - **One stub JSON file per response status code** in `stubs/`
 - OpenAPI path parameters (`{id}`) are converted to mockr wildcards (`*`)
 - The first 2xx response is set as the route `fallback`

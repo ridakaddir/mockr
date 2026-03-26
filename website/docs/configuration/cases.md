@@ -30,7 +30,7 @@ Provide the response body with **either** `json` (inline) or `file` (from disk) 
 ```toml
 [routes.cases.success]
 status = 200
-json   = '{"users": [{"id": 1, "name": "Alice"}]}'
+json   = '{"countries": [{"code": "morocco", "name": "Morocco"}, {"code": "canada", "name": "Canada"}]}'
 ```
 
 Inline JSON supports [template tokens](../features/template-tokens.md):
@@ -38,7 +38,7 @@ Inline JSON supports [template tokens](../features/template-tokens.md):
 ```toml
 [routes.cases.created]
 status = 201
-json   = '{"id": "{<!-- -->{uuid}<!-- -->", "created_at": "{<!-- -->{now}<!-- -->"}'
+json   = '{"code": "{{uuid}}", "created_at": "{{now}}"}'
 ```
 
 ### File-based response
@@ -46,15 +46,15 @@ json   = '{"id": "{<!-- -->{uuid}<!-- -->", "created_at": "{<!-- -->{now}<!-- --
 ```toml
 [routes.cases.success]
 status = 200
-file   = "stubs/users.json"
+file   = "stubs/countries.json"
 ```
 
 File paths support [dynamic resolution](../features/dynamic-files.md):
 
 ```toml
-[routes.cases.user_profile]
+[routes.cases.country_profile]
 status = 200
-file   = "stubs/user-{path.userId}-profile.json"
+file   = "stubs/countries/{path.countryId}.json"
 ```
 
 ### Directory aggregation
@@ -63,7 +63,7 @@ When `file` points to a directory (trailing `/`), mockr aggregates all `.json` f
 
 ```toml
 [routes.cases.list]
-file = "stubs/users/"    # returns array of all files in stubs/users/
+file = "stubs/countries/"    # returns array of all files in stubs/countries/
 ```
 
 ---
@@ -95,21 +95,21 @@ When `persist: true`, the request body is written to disk. Used with `merge` to 
 # Create
 [routes.cases.created]
 status  = 201
-file    = "stubs/users/"
+file    = "stubs/countries/"
 persist = true
 merge   = "append"
-key     = "userId"
+key     = "code"
 
 # Update
 [routes.cases.updated]
-file    = "stubs/users/{path.userId}.json"
+file    = "stubs/countries/{path.countryId}.json"
 persist = true
 merge   = "update"
 
 # Delete
 [routes.cases.deleted]
 status  = 204
-file    = "stubs/users/{path.userId}.json"
+file    = "stubs/countries/{path.countryId}.json"
 persist = true
 merge   = "delete"
 ```
@@ -123,11 +123,11 @@ Enrich `append`/`update` operations with server-generated fields:
 ```toml
 [routes.cases.created]
 status   = 201
-file     = "stubs/users/"
+file     = "stubs/countries/"
 persist  = true
 merge    = "append"
-key      = "userId"
-defaults = "stubs/defaults/user.json"
+key      = "code"
+defaults = "stubs/defaults/country.json"
 ```
 
 The defaults file is deep-merged under the request body — body values always win on conflicts. Template tokens in the defaults file are resolved before merging.

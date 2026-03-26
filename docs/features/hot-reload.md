@@ -23,16 +23,16 @@ mockr watches the config file or directory for changes using filesystem notifica
 
 mockr automatically tracks **cross-reference dependencies** between stub files. When a stub file contains a `{{ref:...}}` token that points to a directory, mockr monitors that directory for changes and ensures dependent data stays up to date.
 
-**Example:** An endpoint file references its deployments:
+**Example:** A continent file references its countries:
 
 ```json
 {
-  "endpointId": "ep-123",
-  "deployedModels": "{{ref:stubs/deployments/ep-123/?template=stubs/templates/deployed-model.json}}"
+  "name": "Africa",
+  "countries": "{{ref:stubs/countries/?filter=continent:africa&template=stubs/templates/country-summary.json}}"
 }
 ```
 
-When a deployment is created, updated, or deleted in `stubs/deployments/ep-123/`, mockr detects the change and the next GET on the endpoint returns the updated `deployedModels` array — no restart needed.
+When a country is created, updated, or deleted in `stubs/countries/`, mockr detects the change and the next GET on the continent returns the updated `countries` array — no restart needed.
 
 ### How it works
 
@@ -47,7 +47,7 @@ When a deployment is created, updated, or deleted in `stubs/deployments/ep-123/`
 - Directory references in stub files (paths ending with `/`)
 - Newly created stub files are registered for tracking automatically
 - Changes via all persist operations: `merge = "append"`, `merge = "update"`, `merge = "delete"`
-- Background transitions (e.g. `Deploying` to `Ready`) also trigger dependency updates
+- Background transitions (e.g. `pending` to `verified`) also trigger dependency updates
 
 ## Terminal output
 

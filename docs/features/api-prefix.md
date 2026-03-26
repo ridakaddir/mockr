@@ -4,7 +4,7 @@
 
 ---
 
-Use `--api-prefix` when your frontend calls `/api/*` but the real upstream uses bare paths (`/users`, `/posts`).
+Use `--api-prefix` when your frontend calls `/api/*` but the real upstream uses bare paths (`/countries`, `/cities`).
 
 ## Usage
 
@@ -21,12 +21,12 @@ Route definitions always use the **stripped** path:
 ```toml
 [[routes]]
 method   = "GET"
-match    = "/users"      # not /api/users
+match    = "/countries"      # not /api/countries
 enabled  = true
 fallback = "success"
 ```
 
-Your frontend calls `http://localhost:4000/api/users`, mockr strips `/api`, and matches against `/users`.
+Your frontend calls `http://localhost:4000/api/countries`, mockr strips `/api`, and matches against `/countries`.
 
 ---
 

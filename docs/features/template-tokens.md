@@ -11,9 +11,9 @@ mockr supports template tokens in inline JSON values, file-based stubs, director
 | Token | Output | Example |
 |---|---|---|
 | `{{uuid}}` | Random UUID v4 | `"a1b2c3d4-e5f6-7890-abcd-ef1234567890"` |
-| `{{now}}` | RFC 3339 timestamp | `"2026-03-24T10:30:00Z"` |
+| `{{now}}` | RFC 3339 timestamp | `"2026-03-26T10:30:00Z"` |
 | `{{timestamp}}` | Unix epoch in milliseconds | `1711273800000` |
-| `{{ref:path}}` | Data from other stub files | `[{"id": "1", "name": "Model"}]` |
+| `{{ref:path}}` | Data from other stub files | `[{"name": "Morocco", "capital": "Rabat"}]` |
 
 ---
 
@@ -22,15 +22,15 @@ mockr supports template tokens in inline JSON values, file-based stubs, director
 ```toml
 [routes.cases.created]
 status = 201
-json   = '{"id": "{{uuid}}", "created_at": "{{now}}", "ts": {{timestamp}}}'
+json   = '{"code": "{{uuid}}", "created_at": "{{now}}", "ts": {{timestamp}}}'
 ```
 
 **Response:**
 
 ```json
 {
-  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "created_at": "2026-03-24T10:30:00Z",
+  "code": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "created_at": "2026-03-26T10:30:00Z",
   "ts": 1711273800000
 }
 ```
@@ -43,17 +43,17 @@ json   = '{"id": "{{uuid}}", "created_at": "{{now}}", "ts": {{timestamp}}}'
 
 Template tokens work in [defaults files](directory-stubs.md#defaults) for persistence operations. Additionally, defaults files support **request data placeholders** that resolve to values from the current HTTP request:
 
-**`stubs/defaults/user.json`:**
+**`stubs/defaults/country.json`:**
 
 ```json
 {
-  "userId": "{{uuid}}",
-  "role": "user", 
-  "environment": "{.environment}",
-  "tenantId": "{header.X-Tenant-Id}",
-  "active": true,
+  "code": "{{uuid}}",
+  "status": "active",
+  "continent": "{.continent}",
+  "region": "{header.X-Region}",
+  "verified": false,
   "createdAt": "{{now}}",
-  "models": "{{ref:models/{.environment}/}}"
+  "neighboringCountries": "{{ref:countries/{.continent}/}}"
 }
 ```
 
@@ -61,10 +61,10 @@ Template tokens work in [defaults files](directory-stubs.md#defaults) for persis
 
 | Placeholder | Description | Example |
 |-------------|-------------|---------|
-| `{.field}` | Request body field | `{.environment}` → `"prod"` |
-| `{path.param}` | URL path parameter | `{path.tenantId}` → `"acme"` |
-| `{query.param}` | Query parameter | `{query.version}` → `"v2"` |
-| `{header.Name}` | Request header | `{header.X-Tenant-Id}` → `"tenant123"` |
+| `{.field}` | Request body field | `{.continent}` → `"africa"` |
+| `{path.param}` | URL path parameter | `{path.continentId}` → `"africa"` |
+| `{query.param}` | Query parameter | `{query.region}` → `"north-africa"` |
+| `{header.Name}` | Request header | `{header.X-Region}` → `"north-africa"` |
 
 All tokens and placeholders are resolved before the defaults are merged with the request body. This enables **dynamic defaults** that adapt based on the incoming request data.
 
@@ -77,7 +77,7 @@ Standard template tokens (`{{uuid}}`, `{{now}}`, `{{timestamp}}`) work identical
 ```toml
 [grpc_routes.cases.ok]
 status = 0
-json   = '{"userId": "{{uuid}}", "createdAt": "{{now}}"}'
+json   = '{"countryId": "{{uuid}}", "createdAt": "{{now}}"}'
 ```
 
 **Note:** Cross-endpoint references (`{{ref:...}}`) are currently supported for HTTP stubs only, not gRPC.
@@ -92,9 +92,9 @@ The `{{ref:...}}` token allows referencing data from other stub files:
 [routes.cases.list]
 json = '''
 {
-  "users": "{{ref:stubs/users/}}",
-  "activeModels": "{{ref:stubs/models/?filter=status:active}}",
-  "deployedModels": "{{ref:stubs/models/?template=stubs/templates/deployed.json}}"
+  "countries": "{{ref:stubs/countries/}}",
+  "africanCountries": "{{ref:stubs/countries/?filter=continent:africa}}",
+  "citySummaries": "{{ref:stubs/cities/?template=stubs/templates/city-summary.json}}"
 }
 '''
 ```

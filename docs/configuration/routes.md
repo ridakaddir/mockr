@@ -24,18 +24,18 @@ mockr supports three path matching styles:
 ### Exact match
 
 ```toml
-match = "/api/users"
+match = "/api/countries"
 ```
 
-Matches only `GET /api/users` exactly.
+Matches only `GET /api/countries` exactly.
 
 ### Wildcard
 
 `*` matches any segment(s):
 
 ```toml
-match = "/api/users/*"          # /api/users/123, /api/users/abc
-match = "/api/*/orders"         # /api/users/orders, /api/items/orders
+match = "/api/countries/*"          # /api/countries/morocco, /api/countries/canada
+match = "/api/*/cities"             # /api/countries/cities, /api/continents/cities
 ```
 
 ### Regex
@@ -43,7 +43,7 @@ match = "/api/*/orders"         # /api/users/orders, /api/items/orders
 Prefix with `~` to use a regular expression:
 
 ```toml
-match = "~^/api/users/\\d+$"   # /api/users/123 but not /api/users/abc
+match = "~^/api/countries/[a-z]+$"   # /api/countries/morocco but not /api/countries/123
 ```
 
 ### Named parameters
@@ -51,20 +51,20 @@ match = "~^/api/users/\\d+$"   # /api/users/123 but not /api/users/abc
 Use `{name}` placeholders to extract values from URL segments:
 
 ```toml
-match = "/api/users/{userId}"                    # extracts userId
-match = "/api/users/{userId}/posts/{postId}"     # extracts both
+match = "/api/countries/{countryId}"                       # extracts countryId
+match = "/api/continents/{continentId}/countries/{countryId}"  # extracts both
 ```
 
 Named parameters match exactly **one** path segment. They can be mixed with wildcards:
 
 ```toml
-match = "/api/v1/*/environments/{envId}/endpoint/{endpointId}"
+match = "/api/v1/*/regions/{regionId}/countries/{countryId}"
 ```
 
 Extracted values are available for:
-- [Dynamic file resolution](../features/dynamic-files.md) — `file = "stubs/user-{path.userId}.json"`
-- [Persistence key resolution](../features/directory-stubs.md) — `key = "userId"` uses the path value
-- [Conditions](../features/conditions.md) — `source = "path"`, `field = "userId"`
+- [Dynamic file resolution](../features/dynamic-files.md) — `file = "stubs/countries/{path.countryId}.json"`
+- [Persistence key resolution](../features/directory-stubs.md) — `key = "countryId"` uses the path value
+- [Conditions](../features/conditions.md) — `source = "path"`, `field = "countryId"`
 
 See [Named Parameters](../features/named-parameters.md) for full details.
 
