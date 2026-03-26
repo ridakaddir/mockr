@@ -42,7 +42,7 @@ features:
 
   - icon: 🔗
     title: Cross-Endpoint References
-    details: Reference data from other stub files with filtering and transformation using the {<!-- -->{ref:...}<!-- -->} syntax.
+    details: Reference data from other stub files with filtering and transformation using the <code v-pre>{{ref:...}}</code> syntax.
 
   - icon: 🔁
     title: Array Processing
@@ -54,7 +54,7 @@ features:
 
   - icon: 🎨
     title: Template Tokens
-    details: Dynamic content generation with {<!-- -->{uuid}<!-- -->}, {<!-- -->{now}<!-- -->}, {<!-- -->{timestamp}<!-- -->} and other template tokens.
+    details: Dynamic content generation with <code v-pre>{{uuid}}</code>, <code v-pre>{{now}}</code>, <code v-pre>{{timestamp}}</code> and other template tokens.
 
   - icon: 📝
     title: OpenAPI Generation

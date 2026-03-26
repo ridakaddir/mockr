@@ -21,7 +21,7 @@ mockr watches the config file or directory for changes using filesystem notifica
 
 ## Cross-reference dependency tracking
 
-mockr automatically tracks **cross-reference dependencies** between stub files. When a stub file contains a `{<!-- -->{ref:...}<!-- -->}` token that points to a directory, mockr monitors that directory for changes and ensures dependent data stays up to date.
+mockr automatically tracks **cross-reference dependencies** between stub files. When a stub file contains a <code v-pre>{{ref:...}}</code> token that points to a directory, mockr monitors that directory for changes and ensures dependent data stays up to date.
 
 **Example:** A continent file references its countries:
 
@@ -36,7 +36,7 @@ When a country is created, updated, or deleted in `stubs/countries/`, mockr dete
 
 ### How it works
 
-1. On startup, mockr scans all stub files for `{<!-- -->{ref:...}<!-- -->}` tokens pointing to directories
+1. On startup, mockr scans all stub files for <code v-pre>{{ref:...}}</code> tokens pointing to directories
 2. It builds a dependency map: which stub files depend on which directories
 3. When a persist operation (create, update, delete) modifies a file in a tracked directory, the change is detected
 4. Rapid changes are batched (100ms window) to avoid redundant processing
