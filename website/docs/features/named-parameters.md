@@ -105,13 +105,13 @@ A `POST` to `/api/continents/africa/countries/morocco/cities` with body `{"name"
 When using `merge = "append"`, the filename is determined by the `key` field value, resolved in this order:
 
 1. **Request body** — if the body contains the `key` field, that value is used
-2. **Defaults** — if a `defaults` file provides the `key` field (e.g. via `{{uuid}}`), that value is used
+2. **Defaults** — if a `defaults` file provides the `key` field (e.g. via `{<!-- -->{uuid}<!-- -->}`), that value is used
 3. **Named path parameters** — `{countryId}`, `{continentId}` from the URL path
 4. **Path wildcards (single `*`)** — for patterns with a single `*`, the first wildcard match may be used as the key; patterns with multiple `*` are not guaranteed to produce a stable filename key
 5. **Query parameters** — URL query parameters
 6. **Auto-generated UUID** — if none of the above provide a value
 
-> **Note:** Defaults are deep-merged into the request body before key resolution runs. If your `defaults` file sets the `key` field (e.g. `"countryId": "{{uuid}}"`), that value will be used as the filename even when a named path parameter could provide one. To use path parameter keys with defaults, ensure the defaults file does **not** include the `key` field.
+> **Note:** Defaults are deep-merged into the request body before key resolution runs. If your `defaults` file sets the `key` field (e.g. `"countryId": "{<!-- -->{uuid}<!-- -->}"`), that value will be used as the filename even when a named path parameter could provide one. To use path parameter keys with defaults, ensure the defaults file does **not** include the `key` field.
 
 ---
 

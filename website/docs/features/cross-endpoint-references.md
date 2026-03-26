@@ -4,7 +4,7 @@
 
 ---
 
-Cross-endpoint references allow you to include data from other stub files in your responses using the `{{ref:...}}` syntax. This enables building interconnected mock APIs where endpoints reference and share data with optional filtering and transformation.
+Cross-endpoint references allow you to include data from other stub files in your responses using the `{<!-- -->{ref:...}<!-- -->}` syntax. This enables building interconnected mock APIs where endpoints reference and share data with optional filtering and transformation.
 
 ## Syntax
 
@@ -161,7 +161,7 @@ Examples of blocked references:
 
 ### Nested References
 
-Referenced files can contain their own `{{ref:...}}` tokens (with circular reference detection):
+Referenced files can contain their own `{<!-- -->{ref:...}<!-- -->}` tokens (with circular reference detection):
 
 **`stubs/countries/morocco.json`:**
 ```json
@@ -300,15 +300,15 @@ Cross-endpoint references support **dynamic placeholders** in defaults files, al
 
 ### Dynamic Placeholder Syntax
 
-Use these placeholders inside `{{ref:...}}` tokens:
+Use these placeholders inside `{<!-- -->{ref:...}<!-- -->}` tokens:
 
 | Placeholder | Description | Example |
 |-------------|-------------|---------|
-| `{.field}` | Request body field | `{{ref:stubs/{.continent}/countries/}}` |
-| `{.nested.field}` | Nested body field | `{{ref:stubs/{.geo.region}/countries/}}` |
-| `{path.param}` | URL path parameter | `{{ref:stubs/{path.continentId}/countries/}}` |
-| `{query.param}` | Query parameter | `{{ref:stubs/{query.region}/countries/}}` |
-| `{header.Name}` | Request header | `{{ref:stubs/{header.X-Region}/countries/}}` |
+| `{.field}` | Request body field | `{<!-- -->{ref:stubs/{.continent}/countries/}<!-- -->}` |
+| `{.nested.field}` | Nested body field | `{<!-- -->{ref:stubs/{.geo.region}/countries/}<!-- -->}` |
+| `{path.param}` | URL path parameter | `{<!-- -->{ref:stubs/{path.continentId}/countries/}<!-- -->}` |
+| `{query.param}` | Query parameter | `{<!-- -->{ref:stubs/{query.region}/countries/}<!-- -->}` |
+| `{header.Name}` | Request header | `{<!-- -->{ref:stubs/{header.X-Region}/countries/}<!-- -->}` |
 
 ### Example: Continent-Specific Defaults
 
@@ -352,7 +352,7 @@ This resolves to defaults that load:
 
 ### Live Directory References
 
-When a defaults file contains a `{{ref:...}}` token that points to a **directory** (path ending with `/`), the reference is preserved as a live token in the created file rather than being resolved at creation time. This means directory references resolve dynamically on every read, so they always reflect the current state of the referenced directory.
+When a defaults file contains a `{<!-- -->{ref:...}<!-- -->}` token that points to a **directory** (path ending with `/`), the reference is preserved as a live token in the created file rather than being resolved at creation time. This means directory references resolve dynamically on every read, so they always reflect the current state of the referenced directory.
 
 For example, if `defaults/continent.json` contains:
 ```json
@@ -362,7 +362,7 @@ For example, if `defaults/continent.json` contains:
 }
 ```
 
-When a continent is created, the `countries` field is stored as `"{{ref:stubs/countries/africa/?template=...}}"` (with `{.continentId}` resolved to the concrete value). Each subsequent GET request resolves this reference against the current contents of the country directory — so newly added countries appear immediately.
+When a continent is created, the `countries` field is stored as `"{<!-- -->{ref:stubs/countries/africa/?template=...}<!-- -->}"` (with `{.continentId}` resolved to the concrete value). Each subsequent GET request resolves this reference against the current contents of the country directory — so newly added countries appear immediately.
 
 File-based refs (not ending with `/`) are still resolved at creation time, since they point to static data.
 
@@ -500,7 +500,7 @@ X-Region: north-africa
 
 ## Object Spreading
 
-Object spreading allows you to merge the properties of a referenced object directly into the containing object using the `$spread` field with a `{{ref:...}}` reference. This is particularly useful for combining data from multiple sources into a flat response structure.
+Object spreading allows you to merge the properties of a referenced object directly into the containing object using the `$spread` field with a `{<!-- -->{ref:...}<!-- -->}` reference. This is particularly useful for combining data from multiple sources into a flat response structure.
 
 ### Syntax
 

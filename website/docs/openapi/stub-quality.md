@@ -22,8 +22,8 @@ When synthesising stubs from schema definitions, mockr uses format hints to prod
 
 | Schema format | Synthesised value |
 |---|---|
-| `uuid` | `"{{uuid}}"` — rendered as a real UUID at request time |
-| `date-time` | `"{{now}}"` — rendered as RFC 3339 timestamp at request time |
+| `uuid` | `"{<!-- -->{uuid}<!-- -->}"` — rendered as a real UUID at request time |
+| `date-time` | `"{<!-- -->{now}<!-- -->}"` — rendered as RFC 3339 timestamp at request time |
 | `date` | `"2026-01-01"` |
 | `email` | `"user@example.com"` |
 | `uri` | `"https://example.com"` |
