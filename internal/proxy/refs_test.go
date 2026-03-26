@@ -900,7 +900,7 @@ func TestResolveSpreadRefs_NestedSpread(t *testing.T) {
 	}
 }
 
-func TestResolveSpreadRefs_IntegrationUserCase(t *testing.T) {
+func TestResolveSpreadRefs_IntegrationUseCase(t *testing.T) {
 	// Integration test for user's exact use case
 	// This simulates the complete mockr-config structure and workflow
 

@@ -496,7 +496,7 @@ X-Tenant-Id: acme
 
 ## Object Spreading
 
-Object spreading allows you to merge the properties of a referenced object directly into the containing object using the `...{{ref:...}}` syntax. This is particularly useful for combining data from multiple sources into a flat response structure.
+Object spreading allows you to merge the properties of a referenced object directly into the containing object using the `$spread` field with a `{{ref:...}}` reference. This is particularly useful for combining data from multiple sources into a flat response structure.
 
 ### Syntax
 
@@ -607,7 +607,7 @@ Combine spreading with path parameters and other dynamic placeholders:
 ### Limitations
 
 1. **Objects only**: Can only spread objects (`map[string]interface{}`), not arrays or primitives
-2. **Single level**: Spreading applies to the immediate object, not nested structures  
+2. **Per-object scope**: Each `$spread` only merges into its immediate containing object, but you can use `$spread` inside nested objects for nested spreading
 3. **Key conflicts**: Later properties override earlier ones (explicit > spread)
 4. **Processing order**: Spread resolution happens before regular reference resolution
 

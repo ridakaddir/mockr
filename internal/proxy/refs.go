@@ -695,11 +695,22 @@ func processSpreadFields(data interface{}, configDir string, visited map[string]
 				return nil, fmt.Errorf("resolving $spread reference %q: %w", spreadRefStr, err)
 			}
 
+			// Recursively process the spread object itself so that any nested
+			// $spread directives are fully resolved before merging.
+			processedSpread, err := processSpreadFields(spreadObj, configDir, visited, refCtx)
+			if err != nil {
+				return nil, fmt.Errorf("processing spread object for %q: %w", spreadRefStr, err)
+			}
+			spreadMap, ok := processedSpread.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("$spread ref must resolve to an object, got %T after processing", processedSpread)
+			}
+
 			// Create new object with spread properties first, then existing properties
 			newObj := make(map[string]interface{})
 
 			// Add spread properties first
-			for key, value := range spreadObj {
+			for key, value := range spreadMap {
 				newObj[key] = value
 			}
 
