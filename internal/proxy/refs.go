@@ -928,8 +928,9 @@ func resolveAsRefs(content []byte, configDir string, visited map[string]bool, re
 		return content, nil
 	}
 
-	// Quick check: if content doesn't contain "$as", return unchanged
-	if !bytes.Contains(content, []byte("$as")) {
+	// Quick check: if content doesn't contain "$as" as a JSON key, return unchanged.
+	// We check for the quoted form to avoid false positives on values like "$asset" or "saved $as draft".
+	if !bytes.Contains(content, []byte(`"$as"`)) {
 		return content, nil
 	}
 
@@ -993,12 +994,20 @@ func processAsFields(data interface{}, configDir string, visited map[string]bool
 }
 
 // processAsDirective handles a single $as conversion directive.
-// The object must have "$as" (target type) and "from" (source ref) fields.
+// The object must have exactly "$as" (target type) and "from" (source ref) fields.
+// Any other fields are rejected to prevent silent data loss from typos.
 func processAsDirective(obj map[string]interface{}, asType interface{}, configDir string, visited map[string]bool, refCtx *RefContext) (interface{}, error) {
 	// Validate $as is a string
 	targetType, ok := asType.(string)
 	if !ok {
 		return nil, fmt.Errorf("$as field must be a string, got %T", asType)
+	}
+
+	// Reject unknown fields to prevent silent data loss (e.g. typo "form" instead of "from")
+	for key := range obj {
+		if key != "$as" && key != "from" {
+			return nil, fmt.Errorf("$as directive has unexpected field %q (only \"$as\" and \"from\" are allowed)", key)
+		}
 	}
 
 	// Validate "from" field exists

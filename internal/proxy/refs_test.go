@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -1506,6 +1507,88 @@ func TestResolveAsRefs_NoAsDirective(t *testing.T) {
 
 	if string(result) != string(content) {
 		t.Errorf("expected content to pass through unchanged\ngot:  %s\nwant: %s", result, content)
+	}
+}
+
+func TestResolveAsRefs_FalsePositiveSubstring(t *testing.T) {
+	// Content containing "$as" as a substring in a value (not as a directive key)
+	// should pass through byte-identical without re-serialization
+	content := []byte(`{"message":"saved $as draft","status":"$asset_id"}`)
+
+	result, err := resolveAsRefs(content, t.TempDir(), make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !bytes.Equal(result, content) {
+		t.Errorf("content was mutated by false-positive quick-check\ngot:  %s\nwant: %s", result, content)
+	}
+}
+
+func TestResolveAsRefs_InsideArray(t *testing.T) {
+	// $as should work when nested inside an array element
+	tempDir := t.TempDir()
+
+	sourceFile := filepath.Join(tempDir, "splits.json")
+	if err := os.WriteFile(sourceFile, []byte(`[{"x": 1}, {"y": 2}]`), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	content := []byte(`[
+		{"name": "static"},
+		{"$as": "object", "from": "{{ref:splits.json}}"}
+	]`)
+
+	result, err := resolveAsRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed []interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	if len(parsed) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(parsed))
+	}
+
+	// First item should be unchanged
+	first, ok := parsed[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("first item should be object, got %T", parsed[0])
+	}
+	if first["name"] != "static" {
+		t.Errorf("expected name=static, got %v", first["name"])
+	}
+
+	// Second item should be the merged object
+	second, ok := parsed[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("second item should be object, got %T", parsed[1])
+	}
+	if second["x"] != float64(1) {
+		t.Errorf("expected x=1, got %v", second["x"])
+	}
+	if second["y"] != float64(2) {
+		t.Errorf("expected y=2, got %v", second["y"])
+	}
+}
+
+func TestResolveAsRefs_ErrorOnExtraFields(t *testing.T) {
+	// Extra fields on the $as directive should be rejected
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:splits.json}}",
+		"description": "should not be here"
+	}`)
+
+	_, err := resolveAsRefs(content, t.TempDir(), make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "unexpected field") {
+		t.Errorf("expected error about unexpected field, got: %v", err)
 	}
 }
 
