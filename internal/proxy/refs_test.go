@@ -1416,6 +1416,9 @@ func TestResolveEachAndTemplate_DoubleBraceSyntax(t *testing.T) {
 		t.Fatalf("expected 2 endpoints, got %d", len(parsed))
 	}
 
+	// Track which endpoint IDs we see to verify both are present exactly once
+	seenEndpoints := make(map[string]bool)
+
 	// Check each endpoint
 	for _, item := range parsed {
 		ep, ok := item.(map[string]interface{})
@@ -1432,6 +1435,11 @@ func TestResolveEachAndTemplate_DoubleBraceSyntax(t *testing.T) {
 		if epId == "<no value>" || epId == "{{.endpointId}}" {
 			t.Errorf("endpointId was not resolved, got %q", epId)
 		}
+
+		if seenEndpoints[epId] {
+			t.Errorf("duplicate endpoint %q found", epId)
+		}
+		seenEndpoints[epId] = true
 
 		epName, _ := ep["endpointDisplayName"].(string)
 		if epName == "" || epName == "<no value>" || epName == "{{.endpointDisplayName}}" {
@@ -1474,6 +1482,13 @@ func TestResolveEachAndTemplate_DoubleBraceSyntax(t *testing.T) {
 			if len(deployedModels) != 2 {
 				t.Errorf("ep-200 should have 2 deployments, got %d", len(deployedModels))
 			}
+		}
+	}
+
+	// Assert both expected endpoints were present
+	for _, expectedId := range []string{"ep-100", "ep-200"} {
+		if !seenEndpoints[expectedId] {
+			t.Errorf("expected endpoint %q not found in results", expectedId)
 		}
 	}
 }
