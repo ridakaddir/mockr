@@ -601,6 +601,22 @@ func extractNestedValue(obj map[string]interface{}, path string) interface{} {
 	return current
 }
 
+// templateFuncs provides custom functions available inside ?template= files.
+//
+// "json" serialises any value as a raw JSON fragment, e.g. {{json .spec}}.
+// This is rarely needed since restoreComplexValues automatically patches
+// stringified maps/slices back to structured data, but it can be useful
+// when a template embeds a value inline (e.g. inside a larger string).
+var templateFuncs = template.FuncMap{
+	"json": func(v interface{}) string {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return string(b)
+	},
+}
+
 // applyTemplate transforms data using a Go template file
 func applyTemplate(data interface{}, templatePath string) (interface{}, error) {
 	// Read template file
@@ -609,7 +625,7 @@ func applyTemplate(data interface{}, templatePath string) (interface{}, error) {
 		return nil, fmt.Errorf("reading template %q: %w", templatePath, err)
 	}
 
-	tmpl, err := template.New("ref").Parse(string(tmplContent))
+	tmpl, err := template.New("ref").Funcs(templateFuncs).Parse(string(tmplContent))
 	if err != nil {
 		return nil, fmt.Errorf("parsing template %q: %w", templatePath, err)
 	}
@@ -635,7 +651,12 @@ func applyTemplate(data interface{}, templatePath string) (interface{}, error) {
 	}
 }
 
-// executeTemplate executes a template against data and returns parsed JSON
+// executeTemplate executes a template against data and returns parsed JSON.
+//
+// After execution, the rendered output is parsed with json.Unmarshal.  Any
+// string values in the result whose source data was a map or slice are then
+// patched with the original structured value, so that nested objects survive
+// the template round-trip instead of being flattened to Go's "map[…]" format.
 func executeTemplate(tmpl *template.Template, data interface{}) (interface{}, error) {
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
@@ -646,7 +667,65 @@ func executeTemplate(tmpl *template.Template, data interface{}) (interface{}, er
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		return nil, fmt.Errorf("parsing template output: %w", err)
 	}
+
+	// Restore any complex values that text/template flattened to "map[…]" strings
+	result = restoreComplexValues(result, data)
+
 	return result, nil
+}
+
+// restoreComplexValues walks the template output and replaces string values
+// that were produced by Go's default fmt formatting of maps/slices (e.g.
+// "map[key:value ...]") with the actual structured data from the source.
+//
+// Because a template may rename fields (e.g. "itemSpec": "{{.spec}}"), we
+// cannot match by key.  Instead we build a reverse lookup from the
+// stringified representation of every complex value in the source to its
+// original structured form, then patch any matching string in the result.
+func restoreComplexValues(result interface{}, source interface{}) interface{} {
+	sourceMap, ok := source.(map[string]interface{})
+	if !ok {
+		return result
+	}
+
+	// Build lookup: fmt.Sprint(complexValue) → original value
+	lookup := make(map[string]interface{})
+	for _, val := range sourceMap {
+		switch val.(type) {
+		case map[string]interface{}, []interface{}:
+			lookup[fmt.Sprintf("%v", val)] = val
+		}
+	}
+	if len(lookup) == 0 {
+		return result
+	}
+
+	return restoreComplexValuesWalk(result, lookup)
+}
+
+// restoreComplexValuesWalk recursively walks the template output and replaces
+// stringified map/slice values using the provided lookup table.
+func restoreComplexValuesWalk(node interface{}, lookup map[string]interface{}) interface{} {
+	switch v := node.(type) {
+	case map[string]interface{}:
+		for key, val := range v {
+			if strVal, isStr := val.(string); isStr {
+				if original, found := lookup[strVal]; found {
+					v[key] = original
+					continue
+				}
+			}
+			v[key] = restoreComplexValuesWalk(val, lookup)
+		}
+		return v
+	case []interface{}:
+		for i, elem := range v {
+			v[i] = restoreComplexValuesWalk(elem, lookup)
+		}
+		return v
+	default:
+		return node
+	}
 }
 
 // resolveSpreadRefs processes all $spread field references in content
@@ -1006,18 +1085,56 @@ func resolveCurrentItemPlaceholders(template interface{}, item interface{}) (int
 		if v == "{{.}}" {
 			return item, nil
 		}
-		// Handle {.field} placeholders
-		if strings.HasPrefix(v, "{.") && strings.HasSuffix(v, "}") {
+		// Handle exact-match {.field} placeholders (single braces)
+		if strings.HasPrefix(v, "{.") && strings.HasSuffix(v, "}") && !strings.HasPrefix(v, "{{") {
 			fieldPath := v[2 : len(v)-1] // Remove {. and }
 			if itemMap, ok := item.(map[string]interface{}); ok {
 				return extractNestedValue(itemMap, fieldPath), nil
 			}
+		}
+		// Handle exact-match {{.field}} placeholders (double braces — Go template syntax)
+		if strings.HasPrefix(v, "{{.") && strings.HasSuffix(v, "}}") && !strings.Contains(v, "ref:") {
+			fieldPath := v[3 : len(v)-2] // Remove {{. and }}
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				return extractNestedValue(itemMap, fieldPath), nil
+			}
+		}
+		// Handle embedded {{.field}} placeholders within larger strings (e.g., inside {{ref:...}} tokens)
+		if strings.Contains(v, "{{.") {
+			result := resolveEmbeddedDoubleBracePlaceholders(v, item)
+			return result, nil
 		}
 		return v, nil
 
 	default:
 		return template, nil
 	}
+}
+
+// doubleBracePlaceholderPattern matches {{.field}} placeholders (Go template syntax) within strings
+var doubleBracePlaceholderPattern = regexp.MustCompile(`\{\{\.(\w[\w.]*)\}\}`)
+
+// resolveEmbeddedDoubleBracePlaceholders replaces all {{.field}} placeholders in a string
+// with values from the current item. This enables patterns like:
+//
+//	"{{ref:stubs/deployments/{{.endpointId}}/?template=stubs/templates/deployed-model.json}}"
+//
+// where {{.endpointId}} is resolved to the actual value before ref resolution.
+func resolveEmbeddedDoubleBracePlaceholders(s string, item interface{}) string {
+	itemMap, ok := item.(map[string]interface{})
+	if !ok {
+		return s
+	}
+
+	return doubleBracePlaceholderPattern.ReplaceAllStringFunc(s, func(match string) string {
+		// Extract field path from {{.field}}
+		fieldPath := match[3 : len(match)-2] // Remove {{. and }}
+		val := extractNestedValue(itemMap, fieldPath)
+		if val == nil {
+			return match // Leave unresolved if field not found
+		}
+		return fmt.Sprintf("%v", val)
+	})
 }
 
 // resolveEachRefToken resolves a single ref token for $each processing and returns the result

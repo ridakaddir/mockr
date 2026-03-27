@@ -1287,3 +1287,281 @@ func TestResolveEachAndTemplate_NilRefContext(t *testing.T) {
 		t.Errorf("expected id 123, got %v", item["id"])
 	}
 }
+
+func TestResolveEachAndTemplate_DoubleBraceSyntax(t *testing.T) {
+	// This test verifies that {{.field}} (double-brace, Go template syntax)
+	// works in $template fields — both as standalone values and embedded
+	// inside {{ref:...}} tokens. This is the pattern the client used.
+	tempDir := t.TempDir()
+
+	// Create endpoints directory
+	endpointsDir := filepath.Join(tempDir, "stubs", "endpoints")
+	if err := os.MkdirAll(endpointsDir, 0755); err != nil {
+		t.Fatalf("creating endpoints directory: %v", err)
+	}
+
+	// Create deployments directory
+	deploymentsDir := filepath.Join(tempDir, "stubs", "deployments")
+	if err := os.MkdirAll(deploymentsDir, 0755); err != nil {
+		t.Fatalf("creating deployments directory: %v", err)
+	}
+
+	// Create template directory
+	templatesDir := filepath.Join(tempDir, "stubs", "templates")
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		t.Fatalf("creating templates directory: %v", err)
+	}
+
+	// Create test endpoint files
+	endpoint1 := `{
+		"endpointId": "ep-100",
+		"endpointDisplayName": "Endpoint One",
+		"description": "first endpoint",
+		"driftDetection": "enabled",
+		"enablePredictRequestResponseLogging": false
+	}`
+	if err := os.WriteFile(filepath.Join(endpointsDir, "ep-100.json"), []byte(endpoint1), 0644); err != nil {
+		t.Fatalf("writing endpoint1: %v", err)
+	}
+
+	endpoint2 := `{
+		"endpointId": "ep-200",
+		"endpointDisplayName": "Endpoint Two",
+		"description": "second endpoint",
+		"driftDetection": "disabled",
+		"enablePredictRequestResponseLogging": true
+	}`
+	if err := os.WriteFile(filepath.Join(endpointsDir, "ep-200.json"), []byte(endpoint2), 0644); err != nil {
+		t.Fatalf("writing endpoint2: %v", err)
+	}
+
+	// Create deployment files per endpoint
+	dep1Dir := filepath.Join(deploymentsDir, "ep-100")
+	if err := os.MkdirAll(dep1Dir, 0755); err != nil {
+		t.Fatalf("creating dep1Dir: %v", err)
+	}
+	dep1 := `{
+		"deploymentId": "dep-a",
+		"modelDisplayName": "Model Alpha",
+		"status": "Ready",
+		"createTime": "2026-01-01T00:00:00Z",
+		"deploymentSpec": {"machineType": "e2-standard-2"}
+	}`
+	if err := os.WriteFile(filepath.Join(dep1Dir, "dep-a.json"), []byte(dep1), 0644); err != nil {
+		t.Fatalf("writing dep1: %v", err)
+	}
+
+	dep2Dir := filepath.Join(deploymentsDir, "ep-200")
+	if err := os.MkdirAll(dep2Dir, 0755); err != nil {
+		t.Fatalf("creating dep2Dir: %v", err)
+	}
+	dep2a := `{
+		"deploymentId": "dep-b",
+		"modelDisplayName": "Model Beta",
+		"status": "Deploying",
+		"createTime": "2026-02-01T00:00:00Z",
+		"deploymentSpec": {"machineType": "n1-standard-4"}
+	}`
+	dep2b := `{
+		"deploymentId": "dep-c",
+		"modelDisplayName": "Model Gamma",
+		"status": "Ready",
+		"createTime": "2026-03-01T00:00:00Z",
+		"deploymentSpec": {"machineType": "a2-highgpu-1g"}
+	}`
+	if err := os.WriteFile(filepath.Join(dep2Dir, "dep-b.json"), []byte(dep2a), 0644); err != nil {
+		t.Fatalf("writing dep2a: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dep2Dir, "dep-c.json"), []byte(dep2b), 0644); err != nil {
+		t.Fatalf("writing dep2b: %v", err)
+	}
+
+	// Create template file (uses Go template {{.field}} syntax — resolved by ?template= processor)
+	tmpl := `{
+		"id": "{{.deploymentId}}",
+		"displayName": "{{.modelDisplayName}}",
+		"status": "{{.status}}"
+	}`
+	if err := os.WriteFile(filepath.Join(templatesDir, "deployed-model.json"), []byte(tmpl), 0644); err != nil {
+		t.Fatalf("writing template: %v", err)
+	}
+
+	// THE CLIENT'S PATTERN: $each/$template using {{.field}} (double braces) in template values,
+	// and {{.endpointId}} embedded inside a {{ref:...}} token.
+	input := `{
+		"$each": "{{ref:stubs/endpoints/}}",
+		"$template": {
+			"endpointId": "{{.endpointId}}",
+			"endpointDisplayName": "{{.endpointDisplayName}}",
+			"description": "{{.description}}",
+			"driftDetection": "{{.driftDetection}}",
+			"enablePredictRequestResponseLogging": "{{.enablePredictRequestResponseLogging}}",
+			"deployedModels": "{{ref:stubs/deployments/{{.endpointId}}/?template=stubs/templates/deployed-model.json}}"
+		}
+	}`
+
+	result, err := resolveRefsWithContext([]byte(input), tempDir, make(map[string]bool), &RefContext{})
+	if err != nil {
+		t.Fatalf("resolving refs: %v", err)
+	}
+
+	// Parse result
+	var parsed []interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v\nraw result: %s", err, string(result))
+	}
+
+	// Should have 2 endpoints
+	if len(parsed) != 2 {
+		t.Fatalf("expected 2 endpoints, got %d", len(parsed))
+	}
+
+	// Check each endpoint
+	for _, item := range parsed {
+		ep, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("endpoint should be object, got %T", item)
+		}
+
+		epId, _ := ep["endpointId"].(string)
+		if epId == "" {
+			t.Errorf("endpointId should not be empty, got %v", ep["endpointId"])
+		}
+
+		// Context variables should NOT be "<no value>" or the raw placeholder
+		if epId == "<no value>" || epId == "{{.endpointId}}" {
+			t.Errorf("endpointId was not resolved, got %q", epId)
+		}
+
+		epName, _ := ep["endpointDisplayName"].(string)
+		if epName == "" || epName == "<no value>" || epName == "{{.endpointDisplayName}}" {
+			t.Errorf("endpointDisplayName was not resolved, got %q", epName)
+		}
+
+		// deployedModels should be an array (not a raw string)
+		deployedModels, ok := ep["deployedModels"].([]interface{})
+		if !ok {
+			t.Fatalf("deployedModels for %s should be array, got %T (%v)", epId, ep["deployedModels"], ep["deployedModels"])
+		}
+
+		// Each deployed model should have resolved fields
+		for j, dm := range deployedModels {
+			model, ok := dm.(map[string]interface{})
+			if !ok {
+				t.Fatalf("deployed model %d should be object, got %T", j, dm)
+			}
+			if model["id"] == nil || model["id"] == "" || model["id"] == "<no value>" {
+				t.Errorf("deployed model %d id not resolved: %v", j, model["id"])
+			}
+			if model["displayName"] == nil || model["displayName"] == "" || model["displayName"] == "<no value>" {
+				t.Errorf("deployed model %d displayName not resolved: %v", j, model["displayName"])
+			}
+		}
+
+		// Verify specific endpoint data
+		switch epId {
+		case "ep-100":
+			if epName != "Endpoint One" {
+				t.Errorf("expected 'Endpoint One', got %q", epName)
+			}
+			if len(deployedModels) != 1 {
+				t.Errorf("ep-100 should have 1 deployment, got %d", len(deployedModels))
+			}
+		case "ep-200":
+			if epName != "Endpoint Two" {
+				t.Errorf("expected 'Endpoint Two', got %q", epName)
+			}
+			if len(deployedModels) != 2 {
+				t.Errorf("ep-200 should have 2 deployments, got %d", len(deployedModels))
+			}
+		}
+	}
+}
+
+func TestTemplateRestoresComplexValues(t *testing.T) {
+	// When a ?template= file references a field whose source value is a
+	// map or slice, Go's text/template renders it as "map[…]" or "[…]".
+	// restoreComplexValues should patch the original structured data back.
+	tempDir := t.TempDir()
+
+	// Source data with nested objects and arrays
+	dataDir := filepath.Join(tempDir, "stubs", "items")
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	item := `{
+		"id": "item-1",
+		"name": "widget",
+		"spec": {"cpu": 4, "memory": "16Gi", "gpus": [{"type": "A100", "count": 2}]},
+		"tags": ["prod", "ml"]
+	}`
+	if err := os.WriteFile(filepath.Join(dataDir, "item-1.json"), []byte(item), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Template that references the nested fields
+	tmplDir := filepath.Join(tempDir, "stubs", "templates")
+	if err := os.MkdirAll(tmplDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	tmpl := `{
+		"itemId": "{{.id}}",
+		"itemName": "{{.name}}",
+		"itemSpec": "{{.spec}}",
+		"itemTags": "{{.tags}}"
+	}`
+	if err := os.WriteFile(filepath.Join(tmplDir, "item.json"), []byte(tmpl), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Use {{ref:...?template=...}} to trigger applyTemplate
+	input := `"{{ref:stubs/items/?template=stubs/templates/item.json}}"`
+
+	result, err := resolveRefsWithContext([]byte(input), tempDir, make(map[string]bool), &RefContext{})
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+
+	var parsed []interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing: %v\nraw: %s", err, string(result))
+	}
+
+	if len(parsed) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(parsed))
+	}
+
+	obj, ok := parsed[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected object, got %T", parsed[0])
+	}
+
+	// Scalars should be fine
+	if obj["itemId"] != "item-1" {
+		t.Errorf("itemId: got %v", obj["itemId"])
+	}
+	if obj["itemName"] != "widget" {
+		t.Errorf("itemName: got %v", obj["itemName"])
+	}
+
+	// Nested object should be a proper map, NOT "map[cpu:4 memory:16Gi ...]"
+	spec, ok := obj["itemSpec"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("itemSpec should be object, got %T (%v)", obj["itemSpec"], obj["itemSpec"])
+	}
+	if spec["cpu"] != float64(4) {
+		t.Errorf("spec.cpu: expected 4, got %v", spec["cpu"])
+	}
+	if spec["memory"] != "16Gi" {
+		t.Errorf("spec.memory: expected 16Gi, got %v", spec["memory"])
+	}
+
+	// Nested array should be a proper slice, NOT "[prod ml]"
+	tags, ok := obj["itemTags"].([]interface{})
+	if !ok {
+		t.Fatalf("itemTags should be array, got %T (%v)", obj["itemTags"], obj["itemTags"])
+	}
+	if len(tags) != 2 || tags[0] != "prod" || tags[1] != "ml" {
+		t.Errorf("tags: expected [prod, ml], got %v", tags)
+	}
+}
