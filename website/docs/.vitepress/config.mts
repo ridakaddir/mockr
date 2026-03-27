@@ -63,6 +63,7 @@ export default defineConfig({
           { text: 'Template Tokens', link: '/features/template-tokens' },
           { text: 'Cross-Endpoint References', link: '/features/cross-endpoint-references' },
           { text: 'Array Processing', link: '/features/array-processing' },
+          { text: 'Type Conversion', link: '/features/type-conversion' },
           { text: 'Response Transitions', link: '/features/response-transitions' },
           { text: 'Record Mode', link: '/features/record-mode' },
           { text: 'Hot Reload', link: '/features/hot-reload' },

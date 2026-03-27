@@ -35,6 +35,7 @@
 - **Cross-endpoint references** — `{{ref:...}}` syntax to reference data from other stub files with filtering and transformation
 - **Array processing** — `$each` / `$template` syntax to iterate over collections and reshape each item
 - **Object spreading** — `$spread` syntax to merge referenced object properties into the containing object
+- **Type conversion** — `$as` directive to convert between types (e.g. merge an array of objects into a single object)
 - **Dynamic refs in defaults** — `{{ref:stubs/{.field}/data/}}` with request data placeholders for environment-specific defaults
 - **gRPC mock & proxy** — mock unary gRPC methods from `.proto` files; no `protoc` or codegen required
 - **Named path parameters** — `{name}` syntax for path extraction, dynamic files, and persistence

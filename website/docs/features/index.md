@@ -15,6 +15,7 @@ mockr provides a rich set of features for mocking, stubbing, and proxying APIs. 
 | [Template Tokens](template-tokens.md) | <code v-pre>{{uuid}}</code>, <code v-pre>{{now}}</code>, <code v-pre>{{timestamp}}</code>, and <code v-pre>{{ref:...}}</code> in responses |
 | [Cross-Endpoint References](cross-endpoint-references.md) | Reference data from other stub files with filtering and transformation |
 | [Array Processing](array-processing.md) | `$each` / `$template` syntax for iterating over collections and reshaping data |
+| [Type Conversion](type-conversion.md) | `$as` directive to convert between types (e.g. merge an array of objects into one) |
 | [Response Transitions](response-transitions.md) | Time-based state progression across cases |
 | [Record Mode](record-mode.md) | Proxy a real API, save responses, replay offline |
 | [Hot Reload](hot-reload.md) | Edit config, see changes on the next request |
