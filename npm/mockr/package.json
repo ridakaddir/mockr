@@ -28,7 +28,8 @@
   },
   "files": [
     "bin",
-    "README.md"
+    "README.md",
+    "llms.txt"
   ],
   "engines": {
     "node": ">=16"

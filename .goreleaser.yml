@@ -30,6 +30,7 @@ archives:
         formats: [zip]
     files:
       - README.md
+      - llms.txt
       - examples/**
 
 checksum:
