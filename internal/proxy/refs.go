@@ -90,13 +90,19 @@ func resolveRefsWithContext(content []byte, configDir string, visited map[string
 		return nil, err
 	}
 
-	// Step 3: Resolve dynamic placeholders in ref tokens in the remaining content
+	// Step 3: Resolve $as type-conversion directives (e.g. array → object)
+	content, err = resolveAsRefs(content, configDir, visited, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 4: Resolve dynamic placeholders in ref tokens in the remaining content
 	content, err = resolveDynamicInRefs(content, ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 4: Resolve the refs themselves (including any nested refs)
+	// Step 5: Resolve the refs themselves (including any nested refs)
 	return resolveRefs(content, configDir, visited)
 }
 
@@ -903,6 +909,166 @@ func processSpreadRef(refToken string, configDir string, visited map[string]bool
 	return obj, nil
 }
 
+// resolveAsRefs processes all $as type-conversion directives in content.
+// The $as directive converts a resolved value to a target type.
+//
+// Supported conversions:
+//
+//	"object" — merges an array of objects into a single object (like Object.assign({}, ...arr) in JS).
+//
+// Syntax:
+//
+//	{
+//	    "$as": "object",
+//	    "from": "{{ref:stubs/deployments/123/?template=stubs/templates/traffic-split.json}}"
+//	}
+func resolveAsRefs(content []byte, configDir string, visited map[string]bool, refCtx *RefContext) ([]byte, error) {
+	// Skip processing if content is empty or whitespace-only
+	if len(content) == 0 || len(strings.TrimSpace(string(content))) == 0 {
+		return content, nil
+	}
+
+	// Quick check: if content doesn't contain "$as", return unchanged
+	if !bytes.Contains(content, []byte("$as")) {
+		return content, nil
+	}
+
+	// Parse the JSON to find $as fields
+	var parsed interface{}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		return nil, fmt.Errorf("parsing JSON for $as resolution: %w", err)
+	}
+
+	// Process $as fields recursively
+	result, err := processAsFields(parsed, configDir, visited, refCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Marshal the result back to JSON
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling $as result: %w", err)
+	}
+
+	return resultBytes, nil
+}
+
+// processAsFields recursively finds and processes $as directives in the parsed JSON structure
+func processAsFields(data interface{}, configDir string, visited map[string]bool, refCtx *RefContext) (interface{}, error) {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		// Check if this object contains a $as field
+		if asType, exists := v["$as"]; exists {
+			return processAsDirective(v, asType, configDir, visited, refCtx)
+		}
+
+		// No $as field, process nested objects recursively
+		newObj := make(map[string]interface{})
+		for key, value := range v {
+			processed, err := processAsFields(value, configDir, visited, refCtx)
+			if err != nil {
+				return nil, err
+			}
+			newObj[key] = processed
+		}
+		return newObj, nil
+
+	case []interface{}:
+		// Process arrays recursively
+		newArray := make([]interface{}, len(v))
+		for i, item := range v {
+			processed, err := processAsFields(item, configDir, visited, refCtx)
+			if err != nil {
+				return nil, err
+			}
+			newArray[i] = processed
+		}
+		return newArray, nil
+
+	default:
+		// Return primitive values as-is
+		return data, nil
+	}
+}
+
+// processAsDirective handles a single $as conversion directive.
+// The object must have "$as" (target type) and "from" (source ref) fields.
+func processAsDirective(obj map[string]interface{}, asType interface{}, configDir string, visited map[string]bool, refCtx *RefContext) (interface{}, error) {
+	// Validate $as is a string
+	targetType, ok := asType.(string)
+	if !ok {
+		return nil, fmt.Errorf("$as field must be a string, got %T", asType)
+	}
+
+	// Validate "from" field exists
+	fromRef, exists := obj["from"]
+	if !exists {
+		return nil, fmt.Errorf("$as directive requires a \"from\" field")
+	}
+
+	fromRefStr, ok := fromRef.(string)
+	if !ok {
+		return nil, fmt.Errorf("$as \"from\" field must be a string, got %T", fromRef)
+	}
+
+	// Dispatch to the appropriate converter
+	switch targetType {
+	case "object":
+		return convertArrayToObject(fromRefStr, configDir, visited, refCtx)
+	default:
+		return nil, fmt.Errorf("unsupported $as target type: %q", targetType)
+	}
+}
+
+// convertArrayToObject resolves a ref that returns an array of objects and merges
+// all elements into a single flat object. Later keys overwrite earlier ones.
+// This is equivalent to Object.assign({}, ...array) in JavaScript.
+func convertArrayToObject(refToken string, configDir string, visited map[string]bool, refCtx *RefContext) (map[string]interface{}, error) {
+	// Check if this is a {{ref:...}} token and extract the path
+	if !strings.HasPrefix(refToken, "{{ref:") || !strings.HasSuffix(refToken, "}}") {
+		return nil, fmt.Errorf("$as \"from\" value must be a {{ref:...}} token, got %q", refToken)
+	}
+
+	// Extract the path from {{ref:path}}
+	path := refToken[6 : len(refToken)-2] // Remove "{{ref:" and "}}"
+
+	// First resolve any dynamic placeholders in the ref token
+	if refCtx != nil {
+		resolved, err := resolvePlaceholders(path, refCtx)
+		if err != nil {
+			return nil, fmt.Errorf("resolving placeholders in $as ref %q: %w", path, err)
+		}
+		path = resolved
+	}
+
+	// Resolve the reference using existing logic
+	resolved, err := resolveRefToken(path, configDir, visited)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure the result is an array
+	arr, ok := resolved.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("$as \"object\": source must be an array, got %T", resolved)
+	}
+
+	// Merge all array elements into a single object
+	merged := make(map[string]interface{})
+	for i, item := range arr {
+		itemObj, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("$as \"object\": array item at index %d must be an object, got %T", i, item)
+		}
+		for key, value := range itemObj {
+			merged[key] = value
+		}
+	}
+
+	return merged, nil
+}
+
 // resolveEachAndTemplateRefs processes $each and $template fields in the content
 func resolveEachAndTemplateRefs(content []byte, configDir string, visited map[string]bool, refCtx *RefContext) ([]byte, error) {
 	// Skip processing if content is empty or whitespace-only
@@ -1199,12 +1365,18 @@ func resolveRefsWithoutEachProcessing(content []byte, configDir string, visited 
 		return nil, err
 	}
 
-	// Step 3: Resolve dynamic placeholders in ref tokens in the remaining content
+	// Step 3: Resolve $as type-conversion directives (e.g. array → object)
+	content, err = resolveAsRefs(content, configDir, visited, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 4: Resolve dynamic placeholders in ref tokens in the remaining content
 	content, err = resolveDynamicInRefs(content, ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 4: Resolve the refs themselves (including any nested refs)
+	// Step 5: Resolve the refs themselves (including any nested refs)
 	return resolveRefs(content, configDir, visited)
 }

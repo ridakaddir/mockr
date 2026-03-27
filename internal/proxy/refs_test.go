@@ -1068,6 +1068,447 @@ func TestResolveSpreadRefs_IntegrationUseCase(t *testing.T) {
 	}
 }
 
+// ─── $as directive tests ───────────────────────────────────────────────────
+
+func TestResolveAsRefs_ObjectFromArray(t *testing.T) {
+	// Basic test: merge an array of objects into a single object
+	tempDir := t.TempDir()
+
+	// Create source file that contains an array of objects
+	sourceFile := filepath.Join(tempDir, "splits.json")
+	sourceData := `[{"deploymentA": 50}, {"deploymentB": 30}, {"deploymentC": 20}]`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:splits.json}}"
+	}`)
+
+	result, err := resolveAsRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	if parsed["deploymentA"] != float64(50) {
+		t.Errorf("expected deploymentA=50, got %v", parsed["deploymentA"])
+	}
+	if parsed["deploymentB"] != float64(30) {
+		t.Errorf("expected deploymentB=30, got %v", parsed["deploymentB"])
+	}
+	if parsed["deploymentC"] != float64(20) {
+		t.Errorf("expected deploymentC=20, got %v", parsed["deploymentC"])
+	}
+}
+
+func TestResolveAsRefs_EmptyObjects(t *testing.T) {
+	// Empty objects in the array should be skipped gracefully
+	tempDir := t.TempDir()
+
+	sourceFile := filepath.Join(tempDir, "splits.json")
+	sourceData := `[{"a": 1}, {}, {"b": 2}]`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:splits.json}}"
+	}`)
+
+	result, err := resolveAsRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	if len(parsed) != 2 {
+		t.Errorf("expected 2 keys, got %d: %v", len(parsed), parsed)
+	}
+	if parsed["a"] != float64(1) {
+		t.Errorf("expected a=1, got %v", parsed["a"])
+	}
+	if parsed["b"] != float64(2) {
+		t.Errorf("expected b=2, got %v", parsed["b"])
+	}
+}
+
+func TestResolveAsRefs_OverlappingKeys(t *testing.T) {
+	// Later keys overwrite earlier ones (like Object.assign)
+	tempDir := t.TempDir()
+
+	sourceFile := filepath.Join(tempDir, "splits.json")
+	sourceData := `[{"key": "first"}, {"key": "second"}]`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:splits.json}}"
+	}`)
+
+	result, err := resolveAsRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	if parsed["key"] != "second" {
+		t.Errorf("expected later key to win, got %v", parsed["key"])
+	}
+}
+
+func TestResolveAsRefs_EmptyArray(t *testing.T) {
+	// Empty array should produce an empty object
+	tempDir := t.TempDir()
+
+	sourceFile := filepath.Join(tempDir, "empty.json")
+	if err := os.WriteFile(sourceFile, []byte(`[]`), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:empty.json}}"
+	}`)
+
+	result, err := resolveAsRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	if len(parsed) != 0 {
+		t.Errorf("expected empty object, got %v", parsed)
+	}
+}
+
+func TestResolveAsRefs_ErrorOnObjectSource(t *testing.T) {
+	// $as "object" should error when source is an object, not an array
+	tempDir := t.TempDir()
+
+	sourceFile := filepath.Join(tempDir, "obj.json")
+	if err := os.WriteFile(sourceFile, []byte(`{"a": 1}`), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:obj.json}}"
+	}`)
+
+	_, err := resolveAsRefs(content, tempDir, make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "source must be an array") {
+		t.Errorf("expected error about array source, got: %v", err)
+	}
+}
+
+func TestResolveAsRefs_ErrorOnInvalidRef(t *testing.T) {
+	// $as "from" must be a {{ref:...}} token
+	content := []byte(`{
+		"$as": "object",
+		"from": "not-a-ref"
+	}`)
+
+	_, err := resolveAsRefs(content, t.TempDir(), make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "must be a {{ref:...}} token") {
+		t.Errorf("expected error about ref token, got: %v", err)
+	}
+}
+
+func TestResolveAsRefs_ErrorOnMissingFrom(t *testing.T) {
+	// $as without "from" field should error
+	content := []byte(`{
+		"$as": "object"
+	}`)
+
+	_, err := resolveAsRefs(content, t.TempDir(), make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "requires a \"from\" field") {
+		t.Errorf("expected error about missing from, got: %v", err)
+	}
+}
+
+func TestResolveAsRefs_ErrorOnUnsupportedType(t *testing.T) {
+	// Unsupported $as type should error with a clear message
+	content := []byte(`{
+		"$as": "banana",
+		"from": "{{ref:something.json}}"
+	}`)
+
+	_, err := resolveAsRefs(content, t.TempDir(), make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "unsupported $as target type") {
+		t.Errorf("expected error about unsupported type, got: %v", err)
+	}
+}
+
+func TestResolveAsRefs_ErrorOnNonStringAs(t *testing.T) {
+	// $as must be a string
+	content := []byte(`{
+		"$as": 123,
+		"from": "{{ref:something.json}}"
+	}`)
+
+	_, err := resolveAsRefs(content, t.TempDir(), make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "$as field must be a string") {
+		t.Errorf("expected error about string type, got: %v", err)
+	}
+}
+
+func TestResolveAsRefs_ErrorOnNonStringFrom(t *testing.T) {
+	// $as "from" must be a string
+	content := []byte(`{
+		"$as": "object",
+		"from": 123
+	}`)
+
+	_, err := resolveAsRefs(content, t.TempDir(), make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "\"from\" field must be a string") {
+		t.Errorf("expected error about string from, got: %v", err)
+	}
+}
+
+func TestResolveAsRefs_Nested(t *testing.T) {
+	// $as should work inside nested objects
+	tempDir := t.TempDir()
+
+	sourceFile := filepath.Join(tempDir, "splits.json")
+	sourceData := `[{"a": 10}, {"b": 20}]`
+	if err := os.WriteFile(sourceFile, []byte(sourceData), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	content := []byte(`{
+		"name": "my-endpoint",
+		"trafficSplit": {
+			"$as": "object",
+			"from": "{{ref:splits.json}}"
+		},
+		"status": "active"
+	}`)
+
+	result, err := resolveAsRefs(content, tempDir, make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v", err)
+	}
+
+	if parsed["name"] != "my-endpoint" {
+		t.Errorf("expected name preserved, got %v", parsed["name"])
+	}
+	if parsed["status"] != "active" {
+		t.Errorf("expected status preserved, got %v", parsed["status"])
+	}
+
+	trafficSplit, ok := parsed["trafficSplit"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected trafficSplit to be an object, got %T", parsed["trafficSplit"])
+	}
+	if trafficSplit["a"] != float64(10) {
+		t.Errorf("expected a=10, got %v", trafficSplit["a"])
+	}
+	if trafficSplit["b"] != float64(20) {
+		t.Errorf("expected b=20, got %v", trafficSplit["b"])
+	}
+}
+
+func TestResolveAsRefs_WithTemplate(t *testing.T) {
+	// Integration test: $as with ?template= to merge templated results
+	// This is the real use case: extract trafficSplit from each deployment
+	tempDir := t.TempDir()
+
+	// Create deployment directory with multiple files
+	deploymentsDir := filepath.Join(tempDir, "stubs", "deployments", "endpoint-1")
+	templatesDir := filepath.Join(tempDir, "stubs", "templates")
+	if err := os.MkdirAll(deploymentsDir, 0755); err != nil {
+		t.Fatalf("creating deployments dir: %v", err)
+	}
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		t.Fatalf("creating templates dir: %v", err)
+	}
+
+	// Create deployment files (each has deploymentSpec.trafficSplit)
+	dep1 := `{
+		"deploymentId": "dep-1",
+		"deploymentSpec": {
+			"machineType": "e2-standard-2",
+			"trafficSplit": {"dep-1": 60}
+		}
+	}`
+	dep2 := `{
+		"deploymentId": "dep-2",
+		"deploymentSpec": {
+			"machineType": "e2-standard-4",
+			"trafficSplit": {"dep-2": 40}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(deploymentsDir, "dep-1.json"), []byte(dep1), 0644); err != nil {
+		t.Fatalf("writing dep1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(deploymentsDir, "dep-2.json"), []byte(dep2), 0644); err != nil {
+		t.Fatalf("writing dep2: %v", err)
+	}
+
+	// Create template that extracts just the trafficSplit
+	templateData := `{{json .deploymentSpec.trafficSplit}}`
+	if err := os.WriteFile(filepath.Join(templatesDir, "traffic-split.json"), []byte(templateData), 0644); err != nil {
+		t.Fatalf("writing template: %v", err)
+	}
+
+	// Use $as to merge the array of trafficSplit objects into one
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:stubs/deployments/endpoint-1/?template=stubs/templates/traffic-split.json}}"
+	}`)
+
+	result, err := resolveRefsWithContext([]byte(content), tempDir, make(map[string]bool), &RefContext{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v\nraw: %s", err, result)
+	}
+
+	if parsed["dep-1"] != float64(60) {
+		t.Errorf("expected dep-1=60, got %v", parsed["dep-1"])
+	}
+	if parsed["dep-2"] != float64(40) {
+		t.Errorf("expected dep-2=40, got %v", parsed["dep-2"])
+	}
+}
+
+func TestResolveAsRefs_WithDynamicPlaceholders(t *testing.T) {
+	// Test $as with dynamic path placeholders (like in 08-endpoints.toml)
+	tempDir := t.TempDir()
+
+	// Create deployment directory
+	deploymentsDir := filepath.Join(tempDir, "stubs", "deployments", "ep-123")
+	templatesDir := filepath.Join(tempDir, "stubs", "templates")
+	if err := os.MkdirAll(deploymentsDir, 0755); err != nil {
+		t.Fatalf("creating deployments dir: %v", err)
+	}
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		t.Fatalf("creating templates dir: %v", err)
+	}
+
+	dep := `{
+		"deploymentId": "d1",
+		"deploymentSpec": {"trafficSplit": {"d1": 100}}
+	}`
+	if err := os.WriteFile(filepath.Join(deploymentsDir, "d1.json"), []byte(dep), 0644); err != nil {
+		t.Fatalf("writing dep: %v", err)
+	}
+
+	templateData := `{{json .deploymentSpec.trafficSplit}}`
+	if err := os.WriteFile(filepath.Join(templatesDir, "traffic-split.json"), []byte(templateData), 0644); err != nil {
+		t.Fatalf("writing template: %v", err)
+	}
+
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:stubs/deployments/{path.endpointId}/?template=stubs/templates/traffic-split.json}}"
+	}`)
+
+	refCtx := &RefContext{
+		PathParams: map[string]string{
+			"endpointId": "ep-123",
+		},
+	}
+
+	result, err := resolveRefsWithContext(content, tempDir, make(map[string]bool), refCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("parsing result: %v\nraw: %s", err, result)
+	}
+
+	if parsed["d1"] != float64(100) {
+		t.Errorf("expected d1=100, got %v", parsed["d1"])
+	}
+}
+
+func TestResolveAsRefs_ErrorOnNonObjectArrayItem(t *testing.T) {
+	// Array items must be objects when converting to object
+	tempDir := t.TempDir()
+
+	sourceFile := filepath.Join(tempDir, "mixed.json")
+	if err := os.WriteFile(sourceFile, []byte(`[{"a": 1}, "not-an-object"]`), 0644); err != nil {
+		t.Fatalf("writing source file: %v", err)
+	}
+
+	content := []byte(`{
+		"$as": "object",
+		"from": "{{ref:mixed.json}}"
+	}`)
+
+	_, err := resolveAsRefs(content, tempDir, make(map[string]bool), nil)
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "array item at index 1 must be an object") {
+		t.Errorf("expected error about non-object item, got: %v", err)
+	}
+}
+
+func TestResolveAsRefs_NoAsDirective(t *testing.T) {
+	// Content without $as should pass through unchanged
+	content := []byte(`{"name": "test", "value": 42}`)
+
+	result, err := resolveAsRefs(content, t.TempDir(), make(map[string]bool), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if string(result) != string(content) {
+		t.Errorf("expected content to pass through unchanged\ngot:  %s\nwant: %s", result, content)
+	}
+}
+
 func TestResolveEachAndTemplate_Basic(t *testing.T) {
 	// Setup temporary directory with test files
 	tempDir := t.TempDir()
