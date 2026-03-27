@@ -18,8 +18,8 @@ Process arrays from cross-endpoint references by iterating over each item and ap
 }
 ```
 
-- **`$each`** — a `{<!-- -->{ref:...}<!-- -->}` token that resolves to an array. Each item in the array is processed individually.
-- **`$template`** — the shape applied to every item. Use `{<!-- -->{.fieldName}<!-- -->}` to access properties of the current item.
+- **`$each`** — a <code v-pre>{{ref:...}}</code> token that resolves to an array. Each item in the array is processed individually.
+- **`$template`** — the shape applied to every item. Use <code v-pre>{{.fieldName}}</code> to access properties of the current item.
 
 ---
 
@@ -74,7 +74,7 @@ stubs/
 
 ## Enriching with Nested References
 
-The real power of `$each` / `$template` is combining data from multiple directories. Each item can pull in related data using `{<!-- -->{ref:...}<!-- -->}` with the current item's fields:
+The real power of `$each` / `$template` is combining data from multiple directories. Each item can pull in related data using <code v-pre>{{ref:...}}</code> with the current item's fields:
 
 **`stubs/continents/africa.json`:**
 ```json
@@ -158,13 +158,13 @@ Combine `$each` with the `?template=` query parameter to reshape nested referenc
 
 ## Context Variables
 
-Inside `$template`, use `{<!-- -->{.fieldName}<!-- -->}` to access any property of the current array item:
+Inside `$template`, use <code v-pre>{{.fieldName}}</code> to access any property of the current array item:
 
 | Syntax | Description | Example |
 |---|---|---|
-| `{<!-- -->{.name}<!-- -->}` | Top-level field of the current item | `"Morocco"` |
-| `{<!-- -->{.capital}<!-- -->}` | Another top-level field | `"Rabat"` |
-| `{<!-- -->{.code}<!-- -->}` | Used in nested `{<!-- -->{ref:...}<!-- -->}` paths | `"morocco"` |
+| <code v-pre>{{.name}}</code> | Top-level field of the current item | `"Morocco"` |
+| <code v-pre>{{.capital}}</code> | Another top-level field | `"Rabat"` |
+| <code v-pre>{{.code}}</code> | Used in nested <code v-pre>{{ref:...}}</code> paths | `"morocco"` |
 
 ---
 
@@ -184,7 +184,7 @@ fallback = "detail"
   file   = "stubs/continents/{path.continentId}.json"
 ```
 
-A request to `GET /continents/africa` serves `stubs/continents/africa.json`, which resolves all `$each` / `$template` blocks and nested `{<!-- -->{ref:...}<!-- -->}` tokens before returning the response.
+A request to `GET /continents/africa` serves `stubs/continents/africa.json`, which resolves all `$each` / `$template` blocks and nested <code v-pre>{{ref:...}}</code> tokens before returning the response.
 
 ---
 
@@ -217,8 +217,8 @@ This spreads all properties from `africa.json` into the response and adds an `en
 | `$each` resolves to a non-array | Error: `$each ref must resolve to an array` |
 | `$each` without `$template` | Error: `$each requires $template` |
 | `$template` without `$each` | Error: `$template requires $each` |
-| Missing field in `{<!-- -->{.fieldName}<!-- -->}` | Empty string in output |
-| Invalid `{<!-- -->{ref:...}<!-- -->}` in `$template` | Error with descriptive message |
+| Missing field in <code v-pre>{{.fieldName}}</code> | Empty string in output |
+| Invalid <code v-pre>{{ref:...}}</code> in `$template` | Error with descriptive message |
 
 ---
 

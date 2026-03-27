@@ -12,7 +12,7 @@ mockr provides a rich set of features for mocking, stubbing, and proxying APIs. 
 | [Named Parameters](named-parameters.md) | Extract values from URL paths with `{name}` syntax |
 | [Directory-Based Stubs](directory-stubs.md) | Full CRUD with one JSON file per resource |
 | [Dynamic File Resolution](dynamic-files.md) | `{source.field}` placeholders in stub file paths |
-| [Template Tokens](template-tokens.md) | `{<!-- -->{uuid}<!-- -->}`, `{<!-- -->{now}<!-- -->}`, `{<!-- -->{timestamp}<!-- -->}`, and `{<!-- -->{ref:...}<!-- -->}` in responses |
+| [Template Tokens](template-tokens.md) | <code v-pre>{{uuid}}</code>, <code v-pre>{{now}}</code>, <code v-pre>{{timestamp}}</code>, and <code v-pre>{{ref:...}}</code> in responses |
 | [Cross-Endpoint References](cross-endpoint-references.md) | Reference data from other stub files with filtering and transformation |
 | [Array Processing](array-processing.md) | `$each` / `$template` syntax for iterating over collections and reshaping data |
 | [Response Transitions](response-transitions.md) | Time-based state progression across cases |

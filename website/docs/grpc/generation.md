@@ -41,10 +41,10 @@ Stubs are synthesised from the output message descriptor — field names, types,
 
 | Field name pattern | Synthesised value |
 |---|---|
-| contains `id` | `"{<!-- -->{uuid}<!-- -->}"` |
+| contains `id` | <code v-pre>"{{uuid}}"</code> |
 | contains `email` | `"user@example.com"` |
 | contains `url` / `uri` | `"https://example.com"` |
-| contains `time` / `at` / `date` | `"{<!-- -->{now}<!-- -->}"` |
+| contains `time` / `at` / `date` | <code v-pre>"{{now}}"</code> |
 | contains `name` | `"Example Name"` |
 | `bool` type | `true` |
 | `int32` / `int64` etc. | `1` |
