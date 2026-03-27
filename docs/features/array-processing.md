@@ -232,4 +232,4 @@ This spreads all properties from `africa.json` into the response and adds an `en
 
 ---
 
-**See also:** [Cross-Endpoint References](cross-endpoint-references.md) | [Template Tokens](template-tokens.md) | [Directory-Based Stubs](directory-stubs.md)
+**See also:** [Cross-Endpoint References](cross-endpoint-references.md) | [Type Conversion](type-conversion.md) | [Template Tokens](template-tokens.md) | [Directory-Based Stubs](directory-stubs.md)

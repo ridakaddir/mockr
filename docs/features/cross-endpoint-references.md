@@ -646,4 +646,4 @@ Result: `$spread field must be a string, got int`
 
 ---
 
-**See also:** [Array Processing](array-processing.md) | [Template Tokens](template-tokens.md) | [Directory-Based Stubs](directory-stubs.md) | [Dynamic Files](dynamic-files.md)
+**See also:** [Array Processing](array-processing.md) | [Type Conversion](type-conversion.md) | [Template Tokens](template-tokens.md) | [Directory-Based Stubs](directory-stubs.md) | [Dynamic Files](dynamic-files.md)

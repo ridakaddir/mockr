@@ -22,17 +22,18 @@
 12. [Cross-Endpoint References](#cross-endpoint-references)
 13. [Array Processing ($each / $template)](#array-processing)
 14. [Object Spreading ($spread)](#object-spreading)
-15. [Dynamic Refs in Defaults](#dynamic-refs-in-defaults)
-16. [Response Transitions](#response-transitions)
-17. [Record Mode](#record-mode)
-18. [CORS](#cors)
-19. [Hot Reload](#hot-reload)
-20. [API Prefix](#api-prefix)
-21. [gRPC Reference](#grpc-reference)
-22. [OpenAPI Generation](#openapi-generation)
-23. [Proto Generation](#proto-generation)
-24. [Common Patterns](#common-patterns)
-25. [Troubleshooting](#troubleshooting)
+15. [Type Conversion ($as)](#type-conversion)
+16. [Dynamic Refs in Defaults](#dynamic-refs-in-defaults)
+17. [Response Transitions](#response-transitions)
+18. [Record Mode](#record-mode)
+19. [CORS](#cors)
+20. [Hot Reload](#hot-reload)
+21. [API Prefix](#api-prefix)
+22. [gRPC Reference](#grpc-reference)
+23. [OpenAPI Generation](#openapi-generation)
+24. [Proto Generation](#proto-generation)
+25. [Common Patterns](#common-patterns)
+26. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -849,6 +850,57 @@ If `base.json` is `{"region": "us-east-1", "tier": "standard", "override": "base
 - The `$spread` key itself is removed from the output
 - Works with dynamic placeholders: `"$spread": "{{ref:stubs/configs/{path.env}.json}}"`
 - Nested spreading is supported
+
+---
+
+## TYPE CONVERSION
+
+`$as` converts data from one type to another. Currently supports converting an array of objects into a single merged object.
+
+### Syntax
+
+```json
+{
+  "$as": "object",
+  "from": "{{ref:stubs/deployments/endpoint-1/?template=stubs/templates/traffic-split.json}}"
+}
+```
+
+### Supported conversions
+
+| Target | Input | Output | JS equivalent |
+|--------|-------|--------|---------------|
+| `"object"` | `[{"a": 60}, {"b": 40}]` | `{"a": 60, "b": 40}` | `Object.assign({}, ...arr)` |
+
+### Rules
+- `$as` value must be a string (the target type)
+- `"from"` field is required and must be a `{{ref:...}}` token
+- For `"object"` conversion, source must resolve to an array of objects
+- Later keys overwrite earlier ones on conflict
+- Empty objects in the array are skipped gracefully
+- Empty array produces empty object `{}`
+- Unsupported target types produce a clear error
+- Processing order: `$each/$template` -> `$spread` -> **`$as`** -> dynamic placeholders -> regular refs
+
+### Example: Merge traffic splits from multiple deployments
+
+```json
+{
+  "$spread": "{{ref:stubs/endpoints/{path.endpointId}.json}}",
+  "trafficSplit": {
+    "$as": "object",
+    "from": "{{ref:stubs/deployments/{path.endpointId}/?template=stubs/templates/traffic-split.json}}"
+  },
+  "deployedModels": "{{ref:stubs/deployments/{path.endpointId}/?template=stubs/templates/deployed-model.json}}"
+}
+```
+
+Where `stubs/templates/traffic-split.json` extracts the trafficSplit from each deployment:
+```
+{{json .deploymentSpec.trafficSplit}}
+```
+
+This resolves each deployment's `trafficSplit` into an array like `[{"dep-a": 60}, {"dep-b": 40}]`, then `$as: "object"` merges them into `{"dep-a": 60, "dep-b": 40}`.
 
 ---
 
