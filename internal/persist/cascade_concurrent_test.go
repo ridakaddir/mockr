@@ -178,6 +178,24 @@ func TestExecuteCascade_ConcurrentRollbacks(t *testing.T) {
 					Path:      "deploymentSpec.trafficSplit",
 					Transform: "$.trafficSplit",
 				})
+			} else {
+				// This will succeed - create a valid target file
+				validFile := filepath.Join(tmpDir, fmt.Sprintf("valid-%d.json", idx))
+				validData := map[string]interface{}{
+					"deploymentSpec": map[string]interface{}{
+						"trafficSplit": map[string]interface{}{
+							"deployment-1": 100,
+						},
+					},
+				}
+				writeConcurrentTestJSONFile(t, validFile, validData)
+
+				cascadeTargets = append(cascadeTargets, config.CascadeTarget{
+					Pattern:   validFile,
+					Merge:     "update",
+					Path:      "deploymentSpec.trafficSplit",
+					Transform: "$.trafficSplit",
+				})
 			}
 
 			caseConfig := config.Case{
