@@ -448,7 +448,7 @@ func resolveFilePath(pattern string, context RequestContext) string {
 		if containsDangerousPatterns(value) && context.ConfigDir != "" {
 			// Log security attempt but continue with sanitized value
 			// This prevents attacks while maintaining functionality
-			// TODO: Add proper security logging here
+			_ = value // TODO: Add proper security logging here
 		}
 		sanitized := sanitizePathValue(value)
 		placeholder := fmt.Sprintf("{path.%s}", key)
@@ -460,7 +460,7 @@ func resolveFilePath(pattern string, context RequestContext) string {
 		// Security check: detect dangerous patterns before sanitization
 		if containsDangerousPatterns(value) && context.ConfigDir != "" {
 			// Log security attempt but continue with sanitized value
-			// TODO: Add proper security logging here
+			_ = value // TODO: Add proper security logging here
 		}
 		sanitized := sanitizePathValue(value)
 		placeholder := fmt.Sprintf("{query.%s}", key)
