@@ -233,8 +233,8 @@ func (op *CascadeOperation) atomicRestore(filePath string, content []byte) error
 
 	// Ensure cleanup on failure
 	defer func() {
-		tmpFile.Close()
-		os.Remove(tmpPath)
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
 	}()
 
 	// Write content to temporary file
@@ -280,7 +280,7 @@ func (op *CascadeOperation) atomicDelete(filePath string) error {
 	// Actually delete the renamed file
 	if err := os.Remove(tmpPath); err != nil {
 		// Try to restore if deletion fails
-		os.Rename(tmpPath, filePath)
+		_ = os.Rename(tmpPath, filePath)
 		return fmt.Errorf("deletion of renamed file failed: %w", err)
 	}
 
@@ -448,6 +448,7 @@ func resolveFilePath(pattern string, context RequestContext) string {
 		if containsDangerousPatterns(value) && context.ConfigDir != "" {
 			// Log security attempt but continue with sanitized value
 			// This prevents attacks while maintaining functionality
+			// TODO: Add proper security logging here
 		}
 		sanitized := sanitizePathValue(value)
 		placeholder := fmt.Sprintf("{path.%s}", key)
@@ -459,6 +460,7 @@ func resolveFilePath(pattern string, context RequestContext) string {
 		// Security check: detect dangerous patterns before sanitization
 		if containsDangerousPatterns(value) && context.ConfigDir != "" {
 			// Log security attempt but continue with sanitized value
+			// TODO: Add proper security logging here
 		}
 		sanitized := sanitizePathValue(value)
 		placeholder := fmt.Sprintf("{query.%s}", key)
