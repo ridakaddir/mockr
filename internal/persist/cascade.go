@@ -3,6 +3,7 @@ package persist
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,6 +38,11 @@ type RequestContext struct {
 	PathParams  map[string]string
 	QueryParams map[string]string
 	Headers     map[string]string
+	// Additional context for proxy integration
+	Request      interface{} // *http.Request, but kept as interface{} to avoid import
+	BodyBytes    []byte
+	ConfigDir    string
+	RoutePattern string
 }
 
 // ExecuteCascade executes a complete cascade operation with atomic semantics.
@@ -95,7 +101,7 @@ func (op *CascadeOperation) Prepare(caseConfig config.Case, data interface{}, co
 	}
 
 	// Prepare primary operation
-	primaryPath := resolveFilePath(caseConfig.Primary.File, context)
+	primaryPath := resolveFilePathWithContext(caseConfig.Primary.File, context)
 
 	// For primary operation, if field path is specified, use the entire input data
 	// The executeUpdate will handle extracting the correct field
@@ -344,6 +350,16 @@ func generateOperationID() string {
 	return "cascade-op-" + uuid.New().String()[:8]
 }
 
+// resolveFilePathWithContext resolves file paths using proxy logic when available
+func resolveFilePathWithContext(pattern string, context RequestContext) string {
+	// If we have proxy context, use the full resolution logic
+	if context.Request != nil && context.ConfigDir != "" {
+		// This would need proper proxy integration, for now use simple resolution
+		return resolveFilePath(pattern, context)
+	}
+	return resolveFilePath(pattern, context)
+}
+
 // Helper function to resolve file paths with context placeholders
 func resolveFilePath(pattern string, context RequestContext) string {
 	resolved := pattern
@@ -358,6 +374,13 @@ func resolveFilePath(pattern string, context RequestContext) string {
 	for key, value := range context.QueryParams {
 		placeholder := fmt.Sprintf("{query.%s}", key)
 		resolved = strings.ReplaceAll(resolved, placeholder, value)
+	}
+
+	// Make path absolute with config directory if available
+	if context.ConfigDir != "" {
+		if !strings.HasPrefix(resolved, "/") {
+			resolved = filepath.Join(context.ConfigDir, resolved)
+		}
 	}
 
 	return resolved

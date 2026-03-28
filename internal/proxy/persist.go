@@ -37,6 +37,11 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 			PathParams:  pathParams,
 			QueryParams: extractQueryParams(r),
 			Headers:     extractHeaders(r),
+			// Add proxy-specific context needed for path resolution
+			Request:      r,
+			BodyBytes:    bodyBytes,
+			ConfigDir:    configDir,
+			RoutePattern: routePattern,
 		}
 
 		if err := persist.ExecuteCascade(c, incoming, context); err != nil {
