@@ -15,7 +15,7 @@ func TestExecuteCascade_BasicTrafficSplit(t *testing.T) {
 	// Setup temporary test directory
 	tmpDir, err := os.MkdirTemp("", "cascade_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create test directory structure
 	endpointDir := filepath.Join(tmpDir, "endpoints")
@@ -123,7 +123,7 @@ func TestExecuteCascade_RollbackOnFailure(t *testing.T) {
 	// Setup temporary test directory
 	tmpDir, err := os.MkdirTemp("", "cascade_rollback_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create test files
 	endpointFile := filepath.Join(tmpDir, "endpoint.json")
