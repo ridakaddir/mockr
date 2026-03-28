@@ -1,0 +1,92 @@
+# Example: Traffic Split Cascade Mutation
+#
+# This example demonstrates how to update traffic split values atomically
+# across both endpoint and deployment files using cascade mutations.
+
+# Update traffic split for an endpoint
+# This route will update both:
+# 1. The endpoint's trafficSplit field
+# 2. The trafficSplit field in ALL deployment files for that endpoint
+[[routes]]
+method   = "PATCH"
+match    = "/api/v1/*/environments/*/endpoint/{endpointId}/traffic-split"
+enabled  = true
+fallback = "updated"
+
+  [routes.cases.updated]
+  status = 200
+  persist = true
+  merge = "cascade"  # Enable cascade mutations
+  
+  # Primary operation: Update the endpoint file
+  [routes.cases.updated.primary]
+  file = "stubs/endpoints/{path.endpointId}.json"
+  merge = "update"
+  path = "trafficSplit"  # Update only the trafficSplit field
+  
+  # Cascade operation: Update all deployment files for this endpoint  
+  [[routes.cases.updated.cascade]]
+  pattern = "stubs/deployments/{path.endpointId}/*.json"  # Wildcard pattern
+  merge = "update"
+  path = "deploymentSpec.trafficSplit"  # Nested field path
+  transform = "$.trafficSplit"  # Extract trafficSplit from request body
+
+
+# Example request:
+# PATCH /api/v1/project123/environments/prod/endpoint/my-endpoint/traffic-split
+# Content-Type: application/json
+# 
+# {
+#   "trafficSplit": {
+#     "deployment-a": 70,
+#     "deployment-b": 30
+#   }
+# }
+#
+# This will update:
+# - stubs/endpoints/my-endpoint.json → sets trafficSplit field
+# - stubs/deployments/my-endpoint/deployment-a.json → sets deploymentSpec.trafficSplit field  
+# - stubs/deployments/my-endpoint/deployment-b.json → sets deploymentSpec.trafficSplit field
+#
+# All operations are atomic - if any update fails, all changes are rolled back.
+
+
+# Additional example with conditional cascade
+[[routes]]
+method   = "PATCH"  
+match    = "/api/v1/*/environments/*/endpoint/{endpointId}/configuration"
+enabled  = true
+fallback = "updated"
+
+  [routes.cases.updated]
+  status = 200
+  persist = true
+  merge = "cascade"
+  
+  # Primary operation: Update endpoint configuration
+  [routes.cases.updated.primary]
+  file = "stubs/endpoints/{path.endpointId}.json"
+  merge = "update"
+  
+  # Conditional cascade: Only update deployments if requested
+  [[routes.cases.updated.cascade]]
+  pattern = "stubs/deployments/{path.endpointId}/*.json"
+  merge = "update"
+  path = "deploymentSpec.configuration" 
+  transform = "$.configuration"
+  condition = "{{.body.updateDeployments}}"  # Only cascade if this field is true
+
+
+# Example request with condition:
+# PATCH /api/v1/project123/environments/prod/endpoint/my-endpoint/configuration  
+# Content-Type: application/json
+#
+# {
+#   "configuration": {
+#     "maxReplicas": 10,
+#     "timeout": "30s"
+#   },
+#   "updateDeployments": true
+# }
+#
+# The cascade to deployment files only happens if updateDeployments is true.
