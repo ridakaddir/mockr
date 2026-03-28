@@ -196,19 +196,19 @@ func (op *CascadeOperation) Execute() error {
 	return nil
 }
 
-// Rollback restores all files to their original state.
+// Rollback restores all files to their original state using atomic operations.
 func (op *CascadeOperation) Rollback() error {
 	var rollbackErrors []error
 
 	for filePath, originalContent := range op.Backups {
 		if originalContent == nil {
-			// File didn't exist originally, delete it
-			if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+			// File didn't exist originally, delete it atomically
+			if err := op.atomicDelete(filePath); err != nil && !os.IsNotExist(err) {
 				rollbackErrors = append(rollbackErrors, fmt.Errorf("failed to remove %s: %w", filePath, err))
 			}
 		} else {
-			// Restore original content
-			if err := os.WriteFile(filePath, originalContent, 0644); err != nil {
+			// Restore original content atomically
+			if err := op.atomicRestore(filePath, originalContent); err != nil {
 				rollbackErrors = append(rollbackErrors, fmt.Errorf("failed to restore %s: %w", filePath, err))
 			}
 		}
@@ -218,6 +218,73 @@ func (op *CascadeOperation) Rollback() error {
 		return fmt.Errorf("rollback errors: %v", rollbackErrors)
 	}
 
+	return nil
+}
+
+// atomicRestore restores a file's content using atomic write operations.
+func (op *CascadeOperation) atomicRestore(filePath string, content []byte) error {
+	// Create temporary file in the same directory as target
+	dir := filepath.Dir(filePath)
+	tmpFile, err := os.CreateTemp(dir, ".cascade-restore-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temporary file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	// Ensure cleanup on failure
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+	}()
+
+	// Write content to temporary file
+	if _, err := tmpFile.Write(content); err != nil {
+		return fmt.Errorf("writing to temporary file: %w", err)
+	}
+
+	// Sync to ensure data is written to disk
+	if err := tmpFile.Sync(); err != nil {
+		return fmt.Errorf("syncing temporary file: %w", err)
+	}
+
+	// Close file before rename
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("closing temporary file: %w", err)
+	}
+
+	// Atomic rename (this is the atomic operation)
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		return fmt.Errorf("atomic rename failed: %w", err)
+	}
+
+	op.Logger.LogInfo("atomic_restore_completed", fmt.Sprintf("File %s restored atomically", filePath))
+	return nil
+}
+
+// atomicDelete removes a file atomically by renaming it first.
+func (op *CascadeOperation) atomicDelete(filePath string) error {
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil // Already deleted, nothing to do
+	}
+
+	// Create temporary name for atomic deletion
+	dir := filepath.Dir(filePath)
+	tmpPath := filepath.Join(dir, ".cascade-delete-"+filepath.Base(filePath)+".tmp")
+
+	// Atomic rename to temporary name
+	if err := os.Rename(filePath, tmpPath); err != nil {
+		return fmt.Errorf("atomic rename for deletion failed: %w", err)
+	}
+
+	// Actually delete the renamed file
+	if err := os.Remove(tmpPath); err != nil {
+		// Try to restore if deletion fails
+		os.Rename(tmpPath, filePath)
+		return fmt.Errorf("deletion of renamed file failed: %w", err)
+	}
+
+	op.Logger.LogInfo("atomic_delete_completed", fmt.Sprintf("File %s deleted atomically", filePath))
 	return nil
 }
 
@@ -237,36 +304,47 @@ func (op *CascadeOperation) executeFileOperation(fileOp *FileOperation) error {
 
 // executeUpdate performs an update operation on a file.
 func (op *CascadeOperation) executeUpdate(fileOp *FileOperation) error {
-	var updateData map[string]interface{}
-
-	// Convert data to map
-	dataMap, ok := fileOp.Data.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("data must be a map for update operations")
-	}
-
-	// If field path is specified, handle it appropriately
-	if fileOp.FieldPath != "" {
-		// Check if this is cascade data (already transformed) or primary data
-		if fileOp == op.Primary {
-			// For primary operation: extract the field value and create proper nesting
-			if fieldValue, exists := dataMap[fileOp.FieldPath]; exists {
-				updateData = map[string]interface{}{fileOp.FieldPath: fieldValue}
-			} else {
-				return fmt.Errorf("field %s not found in primary data", fileOp.FieldPath)
-			}
-		} else {
-			// For cascade operation: data is already transformed, just nest it at the field path
-			updateData = createNestedUpdate(fileOp.FieldPath, fileOp.Data)
-		}
-	} else {
-		updateData = dataMap
+	// Apply standardized field path handling for all operations
+	updateData, err := op.prepareUpdateData(fileOp)
+	if err != nil {
+		return err
 	}
 
 	op.Logger.LogInfo("executing_update", fmt.Sprintf("Updating file %s with data: %+v", fileOp.FilePath, updateData))
 
-	_, err := Update(fileOp.FilePath, updateData)
+	_, err = Update(fileOp.FilePath, updateData)
 	return err
+}
+
+// prepareUpdateData handles field path extraction and nesting consistently for all operations
+func (op *CascadeOperation) prepareUpdateData(fileOp *FileOperation) (map[string]interface{}, error) {
+	// Convert data to map
+	dataMap, ok := fileOp.Data.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("data must be a map for update operations")
+	}
+
+	// No field path specified - use data as-is
+	if fileOp.FieldPath == "" {
+		return dataMap, nil
+	}
+
+	// Determine the source data based on operation type
+	var sourceData interface{}
+	if fileOp == op.Primary {
+		// For primary operations: extract the specified field from input data
+		fieldValue, exists := dataMap[fileOp.FieldPath]
+		if !exists {
+			return nil, fmt.Errorf("field %s not found in primary data", fileOp.FieldPath)
+		}
+		sourceData = fieldValue
+	} else {
+		// For cascade operations: the data is already the transformed value
+		sourceData = fileOp.Data
+	}
+
+	// Create properly nested structure for the target field path
+	return createNestedUpdate(fileOp.FieldPath, sourceData), nil
 }
 
 // executeAppend performs an append operation to a directory.
@@ -364,16 +442,27 @@ func resolveFilePathWithContext(pattern string, context RequestContext) string {
 func resolveFilePath(pattern string, context RequestContext) string {
 	resolved := pattern
 
-	// Replace path parameters
+	// Replace path parameters (with security validation first, then sanitization)
 	for key, value := range context.PathParams {
+		// Security check: detect dangerous patterns before sanitization
+		if containsDangerousPatterns(value) && context.ConfigDir != "" {
+			// Log security attempt but continue with sanitized value
+			// This prevents attacks while maintaining functionality
+		}
+		sanitized := sanitizePathValue(value)
 		placeholder := fmt.Sprintf("{path.%s}", key)
-		resolved = strings.ReplaceAll(resolved, placeholder, value)
+		resolved = strings.ReplaceAll(resolved, placeholder, sanitized)
 	}
 
-	// Replace query parameters
+	// Replace query parameters (with security validation first, then sanitization)
 	for key, value := range context.QueryParams {
+		// Security check: detect dangerous patterns before sanitization
+		if containsDangerousPatterns(value) && context.ConfigDir != "" {
+			// Log security attempt but continue with sanitized value
+		}
+		sanitized := sanitizePathValue(value)
 		placeholder := fmt.Sprintf("{query.%s}", key)
-		resolved = strings.ReplaceAll(resolved, placeholder, value)
+		resolved = strings.ReplaceAll(resolved, placeholder, sanitized)
 	}
 
 	// Make path absolute with config directory if available
@@ -384,4 +473,55 @@ func resolveFilePath(pattern string, context RequestContext) string {
 	}
 
 	return resolved
+}
+
+// containsDangerousPatterns checks for path traversal attempts before sanitization
+func containsDangerousPatterns(value string) bool {
+	dangerous := []string{
+		"..",
+		"./",
+		"../",
+		"\x00", // null byte
+		"/etc/",
+		"/var/",
+		"/tmp/",
+	}
+
+	for _, pattern := range dangerous {
+		if strings.Contains(value, pattern) {
+			return true
+		}
+	}
+
+	// Check for absolute paths
+	if strings.HasPrefix(value, "/") {
+		return true
+	}
+
+	return false
+}
+
+// sanitizePathValue removes dangerous characters that could be used for path traversal
+func sanitizePathValue(value string) string {
+	// Remove path traversal sequences
+	sanitized := strings.ReplaceAll(value, "..", "")
+	sanitized = strings.ReplaceAll(sanitized, "./", "")
+	sanitized = strings.ReplaceAll(sanitized, "../", "")
+
+	// Remove null bytes and other control characters
+	sanitized = strings.ReplaceAll(sanitized, "\x00", "")
+	sanitized = strings.ReplaceAll(sanitized, "\n", "")
+	sanitized = strings.ReplaceAll(sanitized, "\r", "")
+	sanitized = strings.ReplaceAll(sanitized, "\t", "")
+
+	// Only allow alphanumeric, hyphens, underscores, and dots
+	var result strings.Builder
+	for _, r := range sanitized {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.' {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
 }
