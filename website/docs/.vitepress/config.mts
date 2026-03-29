@@ -59,6 +59,7 @@ export default defineConfig({
           { text: 'Conditions', link: '/features/conditions' },
           { text: 'Named Parameters', link: '/features/named-parameters' },
           { text: 'Directory-Based Stubs', link: '/features/directory-stubs' },
+          { text: 'Cascade Mutations', link: '/features/cascade-mutations' },
           { text: 'Dynamic File Resolution', link: '/features/dynamic-files' },
           { text: 'Template Tokens', link: '/features/template-tokens' },
           { text: 'Cross-Endpoint References', link: '/features/cross-endpoint-references' },

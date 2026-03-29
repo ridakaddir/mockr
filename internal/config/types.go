@@ -72,10 +72,30 @@ type Case struct {
 	File     string `json:"file"      yaml:"file"      toml:"file"`
 	Delay    int    `json:"delay"     yaml:"delay"     toml:"delay"`
 	Persist  bool   `json:"persist"   yaml:"persist"   toml:"persist"`
-	Merge    string `json:"merge"     yaml:"merge"     toml:"merge"`     // append | update | delete
+	Merge    string `json:"merge"     yaml:"merge"     toml:"merge"`     // append | update | delete | cascade
 	Key      string `json:"key"       yaml:"key"       toml:"key"`       // record lookup key
 	ArrayKey string `json:"array_key" yaml:"array_key" toml:"array_key"` // array field in stub JSON
 	Defaults string `json:"defaults"  yaml:"defaults"  toml:"defaults"`  // JSON file with default values for append/update
+
+	// Cascade mutation fields
+	Primary *CascadePrimary `json:"primary,omitempty"  yaml:"primary,omitempty"  toml:"primary,omitempty"`
+	Cascade []CascadeTarget `json:"cascade,omitempty"  yaml:"cascade,omitempty"  toml:"cascade,omitempty"`
+}
+
+// CascadePrimary defines the primary file operation in a cascade mutation.
+type CascadePrimary struct {
+	File  string `json:"file"           yaml:"file"           toml:"file"`
+	Merge string `json:"merge"          yaml:"merge"          toml:"merge"`          // update | append | delete
+	Path  string `json:"path,omitempty" yaml:"path,omitempty" toml:"path,omitempty"` // optional field path for targeted updates
+}
+
+// CascadeTarget defines a cascade target file operation.
+type CascadeTarget struct {
+	Pattern   string `json:"pattern"             yaml:"pattern"             toml:"pattern"`             // file pattern (supports wildcards)
+	Merge     string `json:"merge"               yaml:"merge"               toml:"merge"`               // update | append | delete
+	Path      string `json:"path,omitempty"      yaml:"path,omitempty"      toml:"path,omitempty"`      // optional field path for targeted updates
+	Transform string `json:"transform,omitempty" yaml:"transform,omitempty" toml:"transform,omitempty"` // JSONPath expression for data transformation
+	Condition string `json:"condition,omitempty" yaml:"condition,omitempty" toml:"condition,omitempty"` // optional condition for cascade execution
 }
 
 // StatusCode returns the HTTP status for a case, defaulting to 200.

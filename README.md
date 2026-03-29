@@ -32,6 +32,7 @@
 ## Features
 
 - **Route-based mocking** — define routes with named response cases and condition routing
+- **Cascade mutations** — atomic multi-file updates with rollback for synchronized data changes
 - **Cross-endpoint references** — `{{ref:...}}` syntax to reference data from other stub files with filtering and transformation
 - **Array processing** — `$each` / `$template` syntax to iterate over collections and reshape each item
 - **Object spreading** — `$spread` syntax to merge referenced object properties into the containing object

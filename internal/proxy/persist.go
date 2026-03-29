@@ -30,6 +30,35 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 	incoming := parseJSONBody(bodyBytes)
 
 	switch strings.ToLower(c.Merge) {
+	case "cascade":
+		// Handle cascade mutations with atomic semantics
+		context := persist.RequestContext{
+			Body:        incoming,
+			PathParams:  pathParams,
+			QueryParams: extractQueryParams(r),
+			Headers:     extractHeaders(r),
+			// Add proxy-specific context needed for path resolution
+			Request:      r,
+			BodyBytes:    bodyBytes,
+			ConfigDir:    configDir,
+			RoutePattern: routePattern,
+		}
+
+		if err := persist.ExecuteCascade(c, incoming, context); err != nil {
+			logger.Error("cascade operation", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return true, ""
+		}
+
+		// Return success with operation summary
+		result := map[string]interface{}{
+			"message":        "Cascade operation completed successfully",
+			"primaryFile":    c.Primary.File,
+			"cascadeTargets": len(c.Cascade),
+		}
+		writeJSON(w, c.StatusCode(), result)
+		return true, ""
+
 	case "update":
 		// Apply defaults if specified (enrich incoming data before persisting).
 		var err error
@@ -265,4 +294,26 @@ func isDirectoryPath(resolvedPath, originalConfigFile string) bool {
 		return true
 	}
 	return false
+}
+
+// extractQueryParams extracts query parameters from the request.
+func extractQueryParams(r *http.Request) map[string]string {
+	params := make(map[string]string)
+	for key, values := range r.URL.Query() {
+		if len(values) > 0 {
+			params[key] = values[0] // Take first value if multiple
+		}
+	}
+	return params
+}
+
+// extractHeaders extracts headers from the request.
+func extractHeaders(r *http.Request) map[string]string {
+	headers := make(map[string]string)
+	for key, values := range r.Header {
+		if len(values) > 0 {
+			headers[key] = values[0] // Take first value if multiple
+		}
+	}
+	return headers
 }
