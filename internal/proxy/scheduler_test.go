@@ -347,6 +347,138 @@ func TestScheduler_NonUpdateMergeSkipped(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Full integration: PATCH → background transition → GET reads updated file
+// ---------------------------------------------------------------------------
+
+func TestPatchUpdatesAndTransitionsInBackground(t *testing.T) {
+	dir := t.TempDir()
+
+	itemsDir := filepath.Join(dir, "items")
+	require.NoError(t, os.MkdirAll(itemsDir, 0755))
+
+	defaultsDir := filepath.Join(dir, "defaults")
+	require.NoError(t, os.MkdirAll(defaultsDir, 0755))
+
+	// Seed a pre-existing item file (PATCH operates on existing resources).
+	writeJSONFile(t, filepath.Join(itemsDir, "item-1.json"), map[string]interface{}{
+		"itemId": "item-1",
+		"name":   "widget",
+		"status": map[string]interface{}{"ready": true, "inProgress": false, "message": "Active"},
+	})
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(defaultsDir, "item-updating.json"),
+		[]byte(`{"status": {"ready": false, "inProgress": true, "message": "Updating"}}`), 0644))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(defaultsDir, "item-ready.json"),
+		[]byte(`{"status": {"ready": true, "inProgress": false, "message": "Active"}}`), 0644))
+
+	cfg := &config.Config{
+		Routes: []config.Route{
+			{
+				Method:   "PATCH",
+				Match:    "/api/items/{itemId}",
+				Fallback: "updated",
+				Transitions: []config.Transition{
+					{Case: "updating", Duration: 1},
+					{Case: "ready"},
+				},
+				Cases: map[string]config.Case{
+					"updated": {
+						Status: 200, File: "items/{path.itemId}.json",
+						Persist: true, Merge: "update",
+						Defaults: "defaults/item-updating.json",
+					},
+					"updating": {
+						Persist: true, Merge: "update",
+						File:     "items/{path.itemId}.json",
+						Defaults: "defaults/item-updating.json",
+					},
+					"ready": {
+						Persist: true, Merge: "update",
+						File:     "items/{path.itemId}.json",
+						Defaults: "defaults/item-ready.json",
+					},
+				},
+			},
+			{
+				Method: "GET", Fallback: "success",
+				Match: "/api/items/{itemId}",
+				Cases: map[string]config.Case{
+					"success": {Status: 200, File: "items/{path.itemId}.json"},
+				},
+			},
+		},
+	}
+
+	loader := &stubConfigLoader{cfg: cfg, configDir: dir}
+	sched := newTransitionScheduler(context.Background())
+	defer sched.Stop()
+
+	handler := NewHandlerWithTransitions(loader, nil, false, "", newTransitionState(), sched, nil)
+
+	// --- PATCH updates the item ---
+
+	patchBody := bytes.NewBufferString(`{"name": "updated-widget"}`)
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/items/item-1", patchBody)
+	patchReq.Header.Set("Content-Type", "application/json")
+	patchW := httptest.NewRecorder()
+	handler.ServeHTTP(patchW, patchReq)
+
+	require.Equal(t, http.StatusOK, patchW.Code)
+	var patchResp map[string]interface{}
+	require.NoError(t, json.Unmarshal(patchW.Body.Bytes(), &patchResp))
+	// The PATCH response should have the updating defaults applied.
+	statusMap, ok := patchResp["status"].(map[string]interface{})
+	require.True(t, ok, "status should be a map")
+	assert.Equal(t, false, statusMap["ready"])
+	assert.Equal(t, true, statusMap["inProgress"])
+	assert.Equal(t, "Updating", statusMap["message"])
+	assert.Equal(t, "updated-widget", patchResp["name"])
+
+	itemFile := filepath.Join(itemsDir, "item-1.json")
+
+	// --- GET immediately → should be Updating ---
+
+	getW := httptest.NewRecorder()
+	handler.ServeHTTP(getW, httptest.NewRequest(http.MethodGet, "/api/items/item-1", nil))
+	require.Equal(t, http.StatusOK, getW.Code)
+	var getResp map[string]interface{}
+	require.NoError(t, json.Unmarshal(getW.Body.Bytes(), &getResp))
+	statusMap = getResp["status"].(map[string]interface{})
+	assert.Equal(t, "Updating", statusMap["message"])
+
+	// --- Wait for background transition (should fire after ~1s) ---
+
+	// Poll the file until status.message becomes "Active" (the "ready" transition).
+	require.Eventually(t, func() bool {
+		data := readJSONFile(t, itemFile)
+		s, ok := data["status"].(map[string]interface{})
+		if !ok {
+			return false
+		}
+		return s["message"] == "Active"
+	}, 3*time.Second, 50*time.Millisecond,
+		"expected status.message=\"Active\" after background transition")
+
+	// --- GET after transition → should be Active/Ready ---
+
+	getW2 := httptest.NewRecorder()
+	handler.ServeHTTP(getW2, httptest.NewRequest(http.MethodGet, "/api/items/item-1", nil))
+	require.Equal(t, http.StatusOK, getW2.Code)
+	var getResp2 map[string]interface{}
+	require.NoError(t, json.Unmarshal(getW2.Body.Bytes(), &getResp2))
+	statusMap2 := getResp2["status"].(map[string]interface{})
+	assert.Equal(t, true, statusMap2["ready"])
+	assert.Equal(t, false, statusMap2["inProgress"])
+	assert.Equal(t, "Active", statusMap2["message"])
+	// Original fields should be preserved.
+	assert.Equal(t, "item-1", getResp2["itemId"])
+	assert.Equal(t, "updated-widget", getResp2["name"])
+}
+
+// ---------------------------------------------------------------------------
 // Full integration: POST → background transition → GET reads updated file
 // ---------------------------------------------------------------------------
 
