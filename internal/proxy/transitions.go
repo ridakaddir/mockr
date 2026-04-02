@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -42,20 +43,10 @@ func (ts *transitionState) ResetMatch(matchPattern string) {
 	for key := range ts.firstHit {
 		// key format is "METHOD match" (e.g. "POST /api/v1/*/model/{id}/config")
 		// Extract the match portion after the first space.
-		if idx := indexOf(key, ' '); idx != -1 && key[idx+1:] == matchPattern {
+		if idx := strings.IndexByte(key, ' '); idx != -1 && key[idx+1:] == matchPattern {
 			delete(ts.firstHit, key)
 		}
 	}
-}
-
-// indexOf returns the index of the first occurrence of sep in s, or -1.
-func indexOf(s string, sep byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == sep {
-			return i
-		}
-	}
-	return -1
 }
 
 // routeKey returns the unique key for a route.
