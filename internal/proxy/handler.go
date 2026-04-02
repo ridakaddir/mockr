@@ -137,6 +137,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						h.scheduler.Schedule(route, persistedPath, h.loader.ConfigDir(), refCtx)
 					}
 				}
+
+				// When a DELETE removes a resource, reset transition state for
+				// all routes sharing the same match pattern. Without this, a
+				// subsequent POST would resolve to the terminal transition case
+				// (e.g. "ready" with merge=update) instead of the fallback
+				// "created" case (merge=append), causing a 404 because the
+				// file no longer exists.
+				if strings.EqualFold(c.Merge, "delete") {
+					h.transitions.ResetMatch(route.Match)
+				}
+
 				return
 			}
 		}

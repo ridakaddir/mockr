@@ -28,6 +28,36 @@ func (ts *transitionState) Reset() {
 	ts.firstHit = make(map[string]time.Time)
 }
 
+// ResetMatch clears recorded first-hit times for all routes whose match
+// pattern equals the given pattern, regardless of HTTP method.
+//
+// This is used when a DELETE operation removes a resource: any POST route
+// with transitions on the same match pattern must restart its transition
+// sequence so that subsequent POSTs use the initial "created" case instead
+// of the terminal "ready/active" case (which would try to update a file
+// that no longer exists).
+func (ts *transitionState) ResetMatch(matchPattern string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for key := range ts.firstHit {
+		// key format is "METHOD match" (e.g. "POST /api/v1/*/model/{id}/config")
+		// Extract the match portion after the first space.
+		if idx := indexOf(key, ' '); idx != -1 && key[idx+1:] == matchPattern {
+			delete(ts.firstHit, key)
+		}
+	}
+}
+
+// indexOf returns the index of the first occurrence of sep in s, or -1.
+func indexOf(s string, sep byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == sep {
+			return i
+		}
+	}
+	return -1
+}
+
 // routeKey returns the unique key for a route.
 func routeKey(route *config.Route) string {
 	return route.Method + " " + route.Match
