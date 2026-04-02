@@ -82,6 +82,7 @@ func applyPersist(w http.ResponseWriter, r *http.Request, c config.Case, bodyByt
 		}
 		logger.SetSource(w, logger.SourceStub)
 		writeJSON(w, c.StatusCode(), updated)
+		return true, filePath
 
 	case "append":
 		if !isDirectoryPath(filePath, c.File) {

@@ -118,23 +118,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Persist (mutating methods).
 		if c.Persist {
-			handled, createdPath := applyPersist(w, requestForExtraction, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams)
+			handled, persistedPath := applyPersist(w, requestForExtraction, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams)
 			if handled {
-				if createdPath != "" {
-					// Register newly created files with the stub watcher so
-					// that any cross-references they contain are tracked for
-					// automatic hot-reload.
-					if h.stubWatcher != nil {
-						h.stubWatcher.AddFile(createdPath)
+				if persistedPath != "" {
+					// Register newly created files (append only) with the stub
+					// watcher so that any cross-references they contain are
+					// tracked for automatic hot-reload.
+					if strings.EqualFold(c.Merge, "append") && h.stubWatcher != nil {
+						h.stubWatcher.AddFile(persistedPath)
 					}
 
-					// If this was an append (resource creation) on a route with
-					// transitions, schedule deferred background mutations so the
-					// created file transitions on disk over time.
+					// If this route has transitions, schedule deferred background
+					// mutations so the persisted file transitions on disk over
+					// time. This applies to both append (resource creation) and
+					// update (resource mutation) operations.
 					if len(route.Transitions) > 0 && h.scheduler != nil {
-						// Create RefContext to capture request data for dynamic refs in transition defaults
 						refCtx := NewRefContext(requestForExtraction, bodyBytes, pathParams)
-						h.scheduler.Schedule(route, createdPath, h.loader.ConfigDir(), refCtx)
+						h.scheduler.Schedule(route, persistedPath, h.loader.ConfigDir(), refCtx)
 					}
 				}
 				return
