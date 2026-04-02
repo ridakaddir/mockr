@@ -307,3 +307,205 @@ func TestPostDeletePost_TransitionResetsOnDelete(t *testing.T) {
 	content := readJSONFile(t, createdFile)
 	assert.Equal(t, "Resource One Recreated", content["name"])
 }
+
+// TestPostDifferentResource_TransitionLeaksBetweenResources verifies that
+// creating resource A, waiting for the transition to expire, and then creating
+// resource B works correctly. The transition state is keyed by route pattern
+// (shared across all resource IDs), so after the transition expires for A,
+// creating B would previously resolve to the terminal "ready" case (merge=update)
+// instead of the fallback "created" case (merge=append), causing a 404 because
+// B's file doesn't exist yet.
+func TestPostDifferentResource_TransitionLeaksBetweenResources(t *testing.T) {
+	dir := t.TempDir()
+	stubDir := filepath.Join(dir, "stubs", "batch-configs")
+	defaultsDir := filepath.Join(dir, "stubs", "defaults")
+	require.NoError(t, os.MkdirAll(stubDir, 0755))
+	require.NoError(t, os.MkdirAll(defaultsDir, 0755))
+
+	// Write defaults files.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(defaultsDir, "batch-config.json"),
+		[]byte(`{"status": {"ready": false, "inProgress": true}}`),
+		0644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(defaultsDir, "batch-config-ready.json"),
+		[]byte(`{"status": {"ready": true, "inProgress": false}}`),
+		0644,
+	))
+
+	cfg := &config.Config{
+		Routes: []config.Route{
+			{
+				Method:   "POST",
+				Match:    "/api/v1/*/environments/*/model/{modelId}/batchConfig",
+				Fallback: "created",
+				Transitions: []config.Transition{
+					{Case: "creating", Duration: 1}, // 1 second for test speed
+					{Case: "ready"},                 // terminal
+				},
+				Cases: map[string]config.Case{
+					"created": {
+						Status:   201,
+						File:     "stubs/batch-configs/",
+						Persist:  true,
+						Merge:    "append",
+						Key:      "modelId",
+						Defaults: "stubs/defaults/batch-config.json",
+					},
+					"ready": {
+						Persist:  true,
+						Merge:    "update",
+						File:     "stubs/batch-configs/{path.modelId}.json",
+						Defaults: "stubs/defaults/batch-config-ready.json",
+					},
+				},
+			},
+		},
+	}
+
+	loader := &stubConfigLoader{cfg: cfg, configDir: dir}
+	ts := newTransitionState()
+	handler := NewHandlerWithTransitions(loader, nil, false, "", ts, nil, nil)
+
+	basePath := "/api/v1/org123/environments/env456/model"
+
+	// ── Step 1: POST creates resource A ──────────────────────────
+	modelA := "model-A"
+	body1 := []byte(`{"rateLimitCount": 100}`)
+	req1 := httptest.NewRequest(http.MethodPost, basePath+"/"+modelA+"/batchConfig", bytes.NewReader(body1))
+	req1.Header.Set("Content-Type", "application/json")
+	w1 := httptest.NewRecorder()
+	handler.ServeHTTP(w1, req1)
+	require.Equal(t, http.StatusCreated, w1.Code, "POST model A should return 201")
+	require.FileExists(t, filepath.Join(stubDir, modelA+".json"))
+
+	// ── Step 2: Wait for transition to expire ──────────────────────────
+	time.Sleep(1100 * time.Millisecond)
+
+	// ── Step 3: POST creates resource B (different model ID) ──────────
+	// Without the fix, the transition state resolves to "ready" (terminal)
+	// which tries merge=update on model-B's file that doesn't exist → 404.
+	modelB := "model-B"
+	body3 := []byte(`{"rateLimitCount": 200}`)
+	req3 := httptest.NewRequest(http.MethodPost, basePath+"/"+modelB+"/batchConfig", bytes.NewReader(body3))
+	req3.Header.Set("Content-Type", "application/json")
+	w3 := httptest.NewRecorder()
+	handler.ServeHTTP(w3, req3)
+
+	assert.Equal(t, http.StatusCreated, w3.Code,
+		"POST model B should return 201 (created), not 404; "+
+			"transition state should not leak between resources. body: %s", w3.Body.String())
+
+	// Verify both files exist.
+	assert.FileExists(t, filepath.Join(stubDir, modelA+".json"))
+	assert.FileExists(t, filepath.Join(stubDir, modelB+".json"))
+
+	contentB := readJSONFile(t, filepath.Join(stubDir, modelB+".json"))
+	assert.Equal(t, modelB, contentB["modelId"])
+}
+
+// TestPostDeletePost_TransitionExpired_SameResource verifies the full cycle:
+// POST A → wait for transition → DELETE A → POST A again.
+// The existing ResetMatch fix handles the DELETE reset, but this test ensures
+// the combination of transition expiry + delete + re-create works end-to-end.
+func TestPostDeletePost_TransitionExpired_SameResource(t *testing.T) {
+	dir := t.TempDir()
+	stubDir := filepath.Join(dir, "stubs", "batch-configs")
+	defaultsDir := filepath.Join(dir, "stubs", "defaults")
+	require.NoError(t, os.MkdirAll(stubDir, 0755))
+	require.NoError(t, os.MkdirAll(defaultsDir, 0755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(defaultsDir, "batch-config.json"),
+		[]byte(`{"status": {"ready": false, "inProgress": true}}`),
+		0644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(defaultsDir, "batch-config-ready.json"),
+		[]byte(`{"status": {"ready": true, "inProgress": false}}`),
+		0644,
+	))
+
+	cfg := &config.Config{
+		Routes: []config.Route{
+			{
+				Method:   "POST",
+				Match:    "/api/v1/*/environments/*/model/{modelId}/batchConfig",
+				Fallback: "created",
+				Transitions: []config.Transition{
+					{Case: "creating", Duration: 1},
+					{Case: "ready"},
+				},
+				Cases: map[string]config.Case{
+					"created": {
+						Status:   201,
+						File:     "stubs/batch-configs/",
+						Persist:  true,
+						Merge:    "append",
+						Key:      "modelId",
+						Defaults: "stubs/defaults/batch-config.json",
+					},
+					"ready": {
+						Persist:  true,
+						Merge:    "update",
+						File:     "stubs/batch-configs/{path.modelId}.json",
+						Defaults: "stubs/defaults/batch-config-ready.json",
+					},
+				},
+			},
+			{
+				Method:   "DELETE",
+				Match:    "/api/v1/*/environments/*/model/{modelId}/batchConfig",
+				Fallback: "deleted",
+				Cases: map[string]config.Case{
+					"deleted": {
+						Status:  200,
+						File:    "stubs/batch-configs/{path.modelId}.json",
+						Persist: true,
+						Merge:   "delete",
+					},
+				},
+			},
+		},
+	}
+
+	loader := &stubConfigLoader{cfg: cfg, configDir: dir}
+	ts := newTransitionState()
+	handler := NewHandlerWithTransitions(loader, nil, false, "", ts, nil, nil)
+
+	modelId := "8979323336441987072"
+	basePath := "/api/v1/org123/environments/env456/model/" + modelId + "/batchConfig"
+	createdFile := filepath.Join(stubDir, modelId+".json")
+
+	// POST creates the resource.
+	body1 := []byte(`{"rateLimitCount": 100}`)
+	req1 := httptest.NewRequest(http.MethodPost, basePath, bytes.NewReader(body1))
+	req1.Header.Set("Content-Type", "application/json")
+	w1 := httptest.NewRecorder()
+	handler.ServeHTTP(w1, req1)
+	require.Equal(t, http.StatusCreated, w1.Code)
+	require.FileExists(t, createdFile)
+
+	// Wait for transition to reach terminal "ready" state.
+	time.Sleep(1100 * time.Millisecond)
+
+	// DELETE removes the resource and resets transitions.
+	req2 := httptest.NewRequest(http.MethodDelete, basePath, nil)
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusOK, w2.Code)
+	require.NoFileExists(t, createdFile)
+
+	// POST again — should use fallback "created" (append).
+	body3 := []byte(`{"rateLimitCount": 300}`)
+	req3 := httptest.NewRequest(http.MethodPost, basePath, bytes.NewReader(body3))
+	req3.Header.Set("Content-Type", "application/json")
+	w3 := httptest.NewRecorder()
+	handler.ServeHTTP(w3, req3)
+
+	assert.Equal(t, http.StatusCreated, w3.Code,
+		"POST after DELETE+transition should return 201; got %d; body: %s",
+		w3.Code, w3.Body.String())
+	assert.FileExists(t, createdFile)
+}

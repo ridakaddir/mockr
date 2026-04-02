@@ -118,8 +118,63 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Persist (mutating methods).
 		if c.Persist {
-			handled, persistedPath := applyPersist(w, requestForExtraction, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams)
+			// When a transition resolved this case to an "update" merge on
+			// a file that doesn't exist (e.g. a new resource hitting a
+			// terminal transition state meant for a different resource),
+			// buffer the response so we can detect the 404 and retry with
+			// the fallback case instead of returning an error to the client.
+			isTransitionCase := caseName != route.Fallback && len(route.Transitions) > 0
+			shouldBuffer := isTransitionCase && strings.EqualFold(c.Merge, "update")
+
+			var (
+				target = http.ResponseWriter(w)
+				buf    *responseBuffer
+			)
+			if shouldBuffer {
+				buf = newIsolatedBuffer()
+				target = buf
+			}
+
+			handled, persistedPath := applyPersist(target, requestForExtraction, c, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams)
 			if handled {
+				// If the buffered response is a 404 (file not found for
+				// update), fall through to the fallback case. This handles
+				// the scenario where the transition state is per-route-pattern
+				// (shared across all resource IDs) and resolves to a terminal
+				// "update" case for a resource whose file doesn't exist yet.
+				if buf != nil && buf.status == http.StatusNotFound {
+					fallbackCase, ok := route.Cases[route.Fallback]
+					if ok && fallbackCase.Persist {
+						handled2, persistedPath2 := applyPersist(w, requestForExtraction, fallbackCase, bodyBytes, route.Match, h.loader.ConfigDir(), pathParams)
+						if handled2 {
+							if persistedPath2 != "" {
+								if strings.EqualFold(fallbackCase.Merge, "append") && h.stubWatcher != nil {
+									h.stubWatcher.AddFile(persistedPath2)
+								}
+								if len(route.Transitions) > 0 && h.scheduler != nil {
+									refCtx := NewRefContext(requestForExtraction, bodyBytes, pathParams)
+									h.scheduler.Schedule(route, persistedPath2, h.loader.ConfigDir(), refCtx)
+								}
+							}
+							if strings.EqualFold(fallbackCase.Merge, "delete") {
+								h.transitions.ResetMatch(route.Match)
+							}
+							return
+						}
+					}
+					// If fallback also fails or doesn't exist, flush the original 404.
+					buf.flush(w)
+					return
+				}
+
+				// Flush buffered response if it was not a 404.
+				if buf != nil {
+					buf.flush(w)
+					// The isolated buffer couldn't propagate logger.SetSource
+					// to the real writer, so mark it now after flushing.
+					logger.SetSource(w, logger.SourceStub)
+				}
+
 				if persistedPath != "" {
 					// Register newly created files (append only) with the stub
 					// watcher so that any cross-references they contain are
@@ -228,15 +283,26 @@ func (h *Handler) resolveCase(route *config.Route, r *http.Request, bodyBytes []
 // responseBuffer is a lightweight http.ResponseWriter that buffers the response
 // so we can inspect it before flushing (e.g. to detect missing dynamic files).
 type responseBuffer struct {
-	header http.Header
-	status int
-	body   []byte
+	header   http.Header
+	status   int
+	body     []byte
+	isolated bool // true when the buffer owns its own header map (not shared with w)
 }
 
 func newResponseRecorder(w http.ResponseWriter) *responseBuffer {
 	return &responseBuffer{
 		header: w.Header(),
 		status: http.StatusOK,
+	}
+}
+
+// newIsolatedBuffer creates a responseBuffer with its own independent header
+// map, suitable for speculative writes that may be discarded.
+func newIsolatedBuffer() *responseBuffer {
+	return &responseBuffer{
+		header:   make(http.Header),
+		status:   http.StatusOK,
+		isolated: true,
 	}
 }
 
@@ -248,6 +314,14 @@ func (rb *responseBuffer) Write(b []byte) (int, error) {
 }
 
 func (rb *responseBuffer) flush(w http.ResponseWriter) {
+	// For isolated buffers, copy headers to the target writer.
+	if rb.isolated {
+		for k, vs := range rb.header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+	}
 	w.WriteHeader(rb.status)
 	_, _ = w.Write(rb.body)
 }
