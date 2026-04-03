@@ -185,10 +185,12 @@ t = 15s  background mutation → merges {"status": "verified"} into the file
 - The `fallback` case (`created`) handles the actual POST response
 - Transition case names (`pending`, `verified`) are for the scheduler, not for request-time case selection — they don't need to match the `fallback`
 - Transition cases with `persist = true` and `defaults` are scheduled as background file mutations
-- Each POST creates **independent timers** — different resources transition independently
+- Each POST spawns **independent background goroutines** — file mutations for different resources happen independently on disk
+- **Shared timeline per route pattern** — the transition clock is shared across all resource IDs on the same route (see [below](#transition-state-and-multiple-resources))
 - **Hot reload** cancels all pending background mutations
 - **Server shutdown** waits for pending mutations to finish gracefully
 - If the file is deleted before a transition fires, the mutation is skipped (logged as a warning)
+- **DELETE resets transitions** — when a DELETE route with `merge = "delete"` removes a resource, the transition clock for that route pattern is reset so subsequent POSTs start fresh
 
 ### Multiple transition stages
 
@@ -215,6 +217,34 @@ defaults = "defaults/city-reviewing.json"
 persist  = true
 merge    = "update"
 defaults = "defaults/city-verified.json"
+```
+
+### Transition state and multiple resources
+
+Transition state is tracked **per route pattern**, not per resource ID. This means `POST /continents/africa/cities` and `POST /continents/europe/cities` share the same transition clock.
+
+In practice, this is handled automatically:
+
+- **Background file mutations are per-file** — each POST spawns its own goroutines that mutate the correct file, regardless of the shared clock
+- **Fallback on missing file** — if the transition clock has advanced to a terminal case (e.g. `verified` with `merge = "update"`) but the target file doesn't exist (because this is a new resource), mockr automatically falls back to the `fallback` case (e.g. `created` with `merge = "append"`) and creates the file normally
+
+This means you can create multiple resources at any time without worrying about the transition clock:
+
+```
+t = 0s    POST /cities (body: {name: "Casablanca"})  → 201 (created)
+t = 15s   background mutation                         → file updated to "verified"
+t = 20s   POST /cities (body: {name: "Berlin"})       → 201 (created, not 404)
+          ↑ transition clock is past "pending", but mockr detects the file
+            doesn't exist and uses the fallback "created" case
+```
+
+Similarly, the **DELETE → re-create** cycle works correctly:
+
+```
+t = 0s    POST /cities (body: {name: "Casablanca"})  → 201 (created)
+t = 15s   background mutation                         → file updated to "verified"
+t = 20s   DELETE /cities/casablanca                    → 200 (deleted, clock resets)
+t = 25s   POST /cities (body: {name: "Casablanca"})  → 201 (created fresh)
 ```
 
 ---

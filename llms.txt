@@ -1028,11 +1028,15 @@ fallback = "create"
 ```
 
 **Behavior:**
-- Each POST creates an independent timer for the newly created file
+- Each POST spawns independent background goroutines — file mutations for different resources happen independently on disk
 - Background goroutines sleep for cumulative durations, then apply the transition case's defaults via `persist.Update` (shallow merge into the file on disk)
 - Transition cases for background mutations MUST have `persist = true`, `merge = "update"`, and `defaults` set
 - Multiple stages have cumulative durations
 - Requires at least 2 transitions (initial state + one deferred state)
+- **Shared timeline per route pattern** — the transition clock is shared across all resource IDs on the same route (e.g. `POST /api/model/A/config` and `POST /api/model/B/config` share one clock)
+- **Fallback on missing file** — if the transition clock has advanced to a terminal `update` case but the target file doesn't exist (new resource), mockr automatically falls back to the `fallback` case (e.g. `merge = "append"`) and creates the file normally
+- **DELETE resets transitions** — when a DELETE route with `merge = "delete"` removes a resource, the transition clock for that match pattern is reset so subsequent POSTs start fresh
+- If the file is deleted before a background transition fires, the mutation is skipped (logged as a warning)
 
 ### Transition fields
 
@@ -1045,6 +1049,8 @@ fallback = "create"
 - Conditions always take priority over transitions
 - Hot reload resets all timelines
 - No looping — transitions are one-way progressions
+- DELETE with `merge = "delete"` resets the transition clock for matching routes
+- Creating a new resource after a transition expires works automatically (falls back to the `fallback` case if the terminal case targets a non-existent file)
 
 ---
 
